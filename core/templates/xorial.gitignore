@@ -1,0 +1,16 @@
+# Xorial — sensitive / auto-generated, never committed
+config.json
+agent.pid
+
+# Xorial — feature temp files
+context/work/**/tmp/
+
+# Obsidian — personal workspace state (per-user)
+context/.obsidian/workspace.json
+context/.obsidian/workspace-mobile.json
+context/.obsidian/hotkeys.json
+
+# Obsidian — downloaded plugin binaries (installed locally)
+context/.obsidian/plugins/*/main.js
+context/.obsidian/plugins/*/manifest.json
+context/.obsidian/plugins/*/styles.css

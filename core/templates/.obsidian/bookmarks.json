@@ -1,0 +1,19 @@
+{
+  "items": [
+    {
+      "type": "file",
+      "path": "dashboard.md",
+      "title": "Dashboard"
+    },
+    {
+      "type": "file",
+      "path": "kanban.md",
+      "title": "Kanban"
+    },
+    {
+      "type": "file",
+      "path": "project-map.canvas",
+      "title": "Project Map"
+    }
+  ]
+}

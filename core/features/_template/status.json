@@ -1,0 +1,15 @@
+{
+    "feature": "template",
+    "type": "feat",
+    "scope": [],
+    "depends_on": "",
+    "assigned_to": "",
+    "iteration": 1,
+    "owner": "orchestrator",
+    "stage": "planning",
+    "status": "",
+    "roles_skip": [],
+    "roles_force": [],
+    "blocked_reason": "",
+    "last_updated": ""
+}

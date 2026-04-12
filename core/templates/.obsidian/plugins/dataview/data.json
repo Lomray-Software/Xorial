@@ -1,0 +1,8 @@
+{
+    "enableInlineDataview": true,
+    "enableDataviewJs": true,
+    "enableInlineDataviewJs": true,
+    "prettyRenderInlineFields": true,
+    "tableIdColumnName": "Feature",
+    "tableGroupColumnName": "Group"
+}

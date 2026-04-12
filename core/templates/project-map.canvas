@@ -1,0 +1,22 @@
+{
+	"nodes":[
+		{"id":"dashboard","type":"file","file":"dashboard.md","x":-160,"y":-880,"width":300,"height":120},
+		{"id":"project-context","type":"file","file":"project-context.md","x":-840,"y":-630,"width":300,"height":140},
+		{"id":"kanban","type":"file","file":"kanban.md","x":200,"y":-560,"width":640,"height":320},
+		{"id":"grp-ref","type":"group","x":-1640,"y":80,"width":1320,"height":180,"label":"Knowledge & Standards"},
+		{"id":"knowledge","type":"file","file":"knowledge/knowledge-base.md","x":-1600,"y":120,"width":280,"height":80},
+		{"id":"skills","type":"file","file":"skills/skills.md","x":-1280,"y":120,"width":280,"height":80},
+		{"id":"coding-standards","type":"file","file":"coding-standards/coding-standards.md","x":-960,"y":120,"width":280,"height":80},
+		{"id":"roles","type":"file","file":"roles/roles.md","x":-640,"y":120,"width":280,"height":80},
+		{"id":"grp-work","type":"group","x":-760,"y":600,"width":2360,"height":520,"label":"Work"},
+		{"id":"grp-feat","type":"group","x":-720,"y":680,"width":940,"height":340,"label":"feat"},
+		{"id":"grp-fix","type":"group","x":280,"y":700,"width":240,"height":120,"label":"fix"},
+		{"id":"grp-refactor","type":"group","x":560,"y":700,"width":240,"height":120,"label":"refactor"},
+		{"id":"grp-chore","type":"group","x":840,"y":700,"width":200,"height":120,"label":"chore"}
+	],
+	"edges":[
+		{"id":"e1","fromNode":"dashboard","fromSide":"bottom","toNode":"project-context","toSide":"top"},
+		{"id":"e2","fromNode":"dashboard","fromSide":"bottom","toNode":"kanban","toSide":"top"},
+		{"id":"e3","fromNode":"dashboard","fromSide":"bottom","toNode":"knowledge","toSide":"top"}
+	]
+}

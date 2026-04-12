@@ -1,0 +1,19 @@
+{
+  "_comment": "Xorial default pipeline. The 'sequence' defines transitions between agents. Override 'skip', 'scopes', and 'custom_agents' in your project's .xorial/context/pipeline.json — do not copy 'sequence' there unless you need to change the order.",
+
+  "sequence": {
+    "intake":            "orchestrator",
+    "critic":            "orchestrator",
+    "implementer":       "reviewer",
+    "reviewer":          "human",
+    "human":             "behavior-reviewer",
+    "behavior-reviewer": "orchestrator"
+  },
+
+  "skip": ["behavior-reviewer"],
+
+  "_scopes_comment": "Define your project's app scopes here. Keys are scope names used in status.json 'scope' field. Values are paths relative to project root.",
+  "scopes": {},
+
+  "custom_agents": {}
+}

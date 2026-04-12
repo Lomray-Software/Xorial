@@ -1,0 +1,23 @@
+# IDE
+.idea/
+.vscode/
+*.iml
+*.ignore.*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.env
+
+# Conductor local config
+conductor/config.local.toml
+
+# Rule & style suggestions (local review directory)
+suggestions.md
+suggestions/*.md
+
+# macOS
+.DS_Store
