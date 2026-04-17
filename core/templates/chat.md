@@ -114,7 +114,22 @@ Then proceed normally — go to **Step 1** below.
 
 ## Step 1 — Read config
 
-Read `.xorial/config.json`. The `xorial_path` field is the absolute path to the Xorial core directory.
+Read `.xorial/config.json`. Capture:
+- `xorial_path` — absolute path to the Xorial core directory.
+- `instance_name` — **the identity of the human in this chat.** Treat this as "who you are talking to right now". If it looks like a person's name or a `<name>-<machine>` combination (e.g. `"Mikhail"`, `"Misha MBP"`, `"ian-linux"`), extract the person's name from it and address the user by that name when natural. If it looks like a pure machine label (`"CI-runner"`, `"MacBook Pro"`, just a hostname), use it for history entries only and don't use it as a form of address.
+
+## Step 1.5 — Identify the speaker and third parties
+
+The `instance_name` you just read is the **default speaker** — the human currently chatting with you.
+
+When the user mentions another developer by name during the conversation — e.g. _"these are edits from Misha"_, _"Ian wants this refactored"_, _"Jan reviewed this and said…"_ — treat that name as a **third party**, not as the speaker. Specifically:
+
+- **Speaker = `instance_name`** unless the user explicitly says otherwise ("this is actually Ian on my machine", "I'm pairing with Misha today").
+- **Third parties** mentioned by the speaker are context: "feedback from Misha", "change requested by Ian". Record attribution when it affects the work (e.g. the history entry, a decision log, a code-review comment) — not as the author of the current pass, but as the source of the input.
+- **Do not confuse the two.** If the speaker says _"Misha asked for X"_, the pass is still being driven by the speaker (`instance_name`); Misha is the requester. History entry should record: author = speaker, note = "requested by Misha".
+- **Override for a single action.** If the speaker explicitly says _"record this as from Misha"_ or _"commit this under Ian's name"_ — honor that override for that specific action (history entry, commit author, etc.) but revert to the default speaker for subsequent actions unless told otherwise.
+
+When the speaker's `instance_name` is ambiguous or missing, ask once: _"Who should I record as the author for this chat session?"_ — and remember the answer for the rest of the session.
 
 ## Step 2 — Determine the role
 

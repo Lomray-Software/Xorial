@@ -54,11 +54,19 @@ Ask questions in **grouped batches**, not one by one. For each group, first expl
 
 ---
 
-**Group A — machine identity (required)**
+**Group A — speaker identity (required)**
 
-> "`instance_name` is a human-readable label written into feature history entries, so when you look back at a feature you can tell which developer or machine did a given pass. It's required because history entries need an author. Detected hostname: `<hostname>` — press enter to use it, or type a custom name (e.g. 'Mikhail MBP', 'CI-runner')."
+> "`instance_name` identifies **who is using Xorial on this machine**. Two jobs:
+>   1. Written into every feature history entry as the author of that pass.
+>   2. Read by the chat agent (via `chat.md`) to know **who it is talking to** — so when you say things like 'these are edits from Misha' or 'Ian wanted this refactored', the agent knows those are third parties, not you.
+>
+> **Prefer a personal name or name + machine** (e.g. `Mikhail`, `Misha MBP`, `ian-linux`) over a pure machine label — the agent uses the personal part to address you.
+>
+> For CI or shared runners, use a neutral label (e.g. `CI`, `ci-runner`). Required — if you refuse, I'll fall back to `<hostname>`."
 
-No skip option here — if user insists on skipping, fall back to `<hostname>`.
+Ask the user, with the detected hostname as a suggestion:
+
+> "Detected hostname: `<hostname>`. Use it, or type the name you want recorded in history and used by the chat agent:"
 
 ---
 
