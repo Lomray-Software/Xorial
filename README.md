@@ -15,6 +15,18 @@ Designed for the AI era: stay focused on architecture and observation, delegate 
 
 ---
 
+## Onboarding (just cloned Xorial?)
+
+Open any AI agent with tool access (Claude Code, Codex CLI, Cursor agent, etc.) in this directory and tell it:
+
+> **"Read `ONBOARD.md` and connect me to my project at `/absolute/path/to/my/project`."**
+
+The agent runs setup, asks only for values it cannot derive (API keys, Telegram credentials, Linear team), writes everything into place, and verifies with a dry-run. No scripts to remember, no manual config editing. Works for both first-time project setup and joining a project a teammate has already Xorial-ified.
+
+If you prefer to do it by hand, see `SETUP.md`.
+
+---
+
 ## What it does
 
 Xorial drives a feature from raw idea to shipped code through a sequence of AI agent roles:
