@@ -71,6 +71,7 @@ Xorial/
   providers/
     slack/                       ← central Slack bot for intake/orchestrator/critic passes
       main.py, handlers.py, invoker.py, ...
+      deploy/                    ← macOS launchd supervisor + auto-restart-on-pull install.sh
 
 <project>/.xorial/              ← per-project (not in this repo)
   config.json                    ← xorial_path, instance_name, telegram credentials
@@ -162,9 +163,23 @@ cp projects.example.json projects.json # register code projects
 ./run.sh
 ```
 
-Slash commands: `/xorial new feat <name>`, `/xorial intake`, `/xorial orchestrate`, `/xorial critic`, `/xorial list`, `/xorial status`, `/xorial whoami`.
+Slash commands: `/xorial new feat <name>`, `/xorial intake`, `/xorial orchestrate`, `/xorial critic`, `/xorial list`, `/xorial status`, `/xorial delete <feat> [confirm]`, `/xorial whoami`. Plus `@xorial <anything>` for free-form chat mode.
 
 Full guide: `providers/slack/README.md`.
+
+### Supervised deployment (macOS host)
+
+For a production host (Mac mini / M1 / Studio that should stay up indefinitely, auto-pull new code, and restart the bot without dropping in-flight passes):
+
+```bash
+./providers/slack/deploy/install.sh
+```
+
+This wires two launchd agents (`com.jani.xorial-sync` for `git pull` every 60s, `com.jani.xorial-slack` for `KeepAlive=true` supervision) plus a post-merge git hook that signals the bot to self-exit at the next idle moment so launchd respawns with fresh code.
+
+Full guide (prerequisites, fresh-machine rebuild recipe, troubleshooting): [`providers/slack/deploy/README.md`](providers/slack/deploy/README.md).
+
+**For AI agents rebuilding on a new machine:** read `providers/slack/deploy/README.md` end-to-end — it is the authoritative checklist for host-side setup.
 
 ---
 
