@@ -24,35 +24,62 @@ from .slack_streamer import SlackStreamer
 log = logging.getLogger(__name__)
 
 
-_ACTIVITY = ("tool", "thinking")
+_TOOL_VERBS = {
+    "Read": "reading files",
+    "Glob": "searching files",
+    "Grep": "searching code",
+    "Write": "writing files",
+    "Edit": "editing files",
+    "MultiEdit": "editing files",
+    "NotebookEdit": "editing notebook",
+    "Bash": "running commands",
+    "BashOutput": "reading command output",
+    "WebFetch": "fetching web",
+    "WebSearch": "searching web",
+    "TodoWrite": "tracking tasks",
+    "Task": "delegating to subagent",
+}
+
+
+def _verb_for_tool(name: str) -> str:
+    return _TOOL_VERBS.get(name, name.lower())
 
 
 async def _pump(streamer: SlackStreamer, events) -> tuple[str, float | None]:
-    """Render RunEvents into the streamer, keeping tool/thinking markers on
-    the same line (`🔧 Read · Read · Bash`) and breaking to a new line only
-    around real text content. Returns (session_id, cost) from ResultMessage.
+    """Render RunEvents into the streamer.
+
+    Tool calls drive a live status footer that replaces in place
+    (`⚙️ reading files ×5`) instead of accumulating one emoji per call.
+    Real text blocks clear the status and stream into the message body.
+    Returns (session_id, cost) from ResultMessage.
     """
     session_id, cost = "", None
-    prev: str | None = None
+    cur_tool: str | None = None
+    cur_count = 0
     async for ev in events:
         if ev.kind == "result":
             session_id, cost = ev.session_id, ev.cost_usd
             continue
         if ev.kind == "text":
-            if prev in _ACTIVITY:
-                await streamer.push("\n")
+            cur_tool, cur_count = None, 0
+            await streamer.clear_status()
             await streamer.push(ev.text)
         elif ev.kind == "tool":
-            if prev in _ACTIVITY:
-                await streamer.push(" · ")
-            elif prev == "text":
-                await streamer.push("\n")
-            await streamer.push(ev.text)
+            name = ev.text
+            if name == cur_tool:
+                cur_count += 1
+            else:
+                cur_tool = name
+                cur_count = 1
+            label = _verb_for_tool(name)
+            if cur_count > 1:
+                label = f"{label} ×{cur_count}"
+            await streamer.set_status(f"⚙️ {label}…")
         elif ev.kind == "thinking":
-            if prev == "text":
-                await streamer.push("\n")
-            await streamer.push(ev.text)
-        prev = ev.kind
+            # Don't clobber an active tool status with a generic "thinking"
+            # — only show it when nothing else is happening.
+            if cur_tool is None:
+                await streamer.set_status("⚙️ thinking…")
     return session_id, cost
 
 
@@ -75,16 +102,24 @@ async def run_pass(
     if thread_state.get(channel_id, thread_ts) is None:
         thread_state.start(channel_id, thread_ts, project.key, feature, role, speaker)
 
-    streamer = SlackStreamer(
-        client=client,
-        channel=channel_id,
-        thread_ts=thread_ts,
-        prefix=f"*{role}*" if not resume_session else f"*{role}* (cont.)",
-    )
-    await streamer.start()
-
     lock = await locks.get(project.key, feature)
     async with lock:
+        # Re-fetch session_id *after* acquiring the lock — if a prior pass
+        # on this thread finished while we were queued, its session_id is
+        # now persisted and we should resume from it instead of starting
+        # fresh. Without this, a reply typed mid-pass loses all context.
+        latest = thread_state.get(channel_id, thread_ts)
+        if latest and latest.get("session_id") and not resume_session:
+            resume_session = latest["session_id"]
+
+        streamer = SlackStreamer(
+            client=client,
+            channel=channel_id,
+            thread_ts=thread_ts,
+            prefix=f"*{role}*" if not resume_session else f"*{role}* (cont.)",
+        )
+        await streamer.start()
+
         tracker.start()
         try:
             session_id, cost = await _pump(

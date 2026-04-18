@@ -79,6 +79,20 @@ def _build_prompt(
         for p in attachments:
             parts.append(f"- {p}")
     parts.append("")
+    parts.append("Runtime environment: Xorial Slack provider.")
+    parts.append(
+        f"- In your final human-facing output, show paths RELATIVE to the project root "
+        f"(`{project.project_root}`), not absolute `/Users/...` paths."
+    )
+    parts.append(
+        "- Do NOT include 'Take role: ... / Work on: ... / Start your pass.' style "
+        "manual next-step instructions — those are for non-Slack runs."
+    )
+    parts.append(
+        "- Instead, for next-step hints tell the user to open a fresh thread and run "
+        "`/xorial orchestrate` (or `/xorial critic`, `/xorial intake` as appropriate)."
+    )
+    parts.append("")
     parts.append("Start your pass.")
     return "\n".join(parts)
 
@@ -130,7 +144,7 @@ async def run_role(
                 if isinstance(block, TextBlock):
                     yield RunEvent(kind="text", text=block.text)
                 elif isinstance(block, ToolUseBlock):
-                    yield RunEvent(kind="tool", text=f"🔧 {block.name}")
+                    yield RunEvent(kind="tool", text=block.name)
                 elif isinstance(block, ThinkingBlock):
                     # Thinking blocks are usually noisy; surface a tick so the
                     # user sees the agent is alive without flooding.
@@ -202,7 +216,7 @@ async def run_chat(
                 if isinstance(block, TextBlock):
                     yield RunEvent(kind="text", text=block.text)
                 elif isinstance(block, ToolUseBlock):
-                    yield RunEvent(kind="tool", text=f"🔧 {block.name}")
+                    yield RunEvent(kind="tool", text=block.name)
         elif isinstance(message, ResultMessage):
             yield RunEvent(
                 kind="result",

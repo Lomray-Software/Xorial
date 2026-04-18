@@ -17,10 +17,16 @@ class SlackStreamer:
     """Buffers text and streams it into a Slack thread by editing the
     current message, rolling over to a new message when the limit is hit.
 
+    Also supports a one-line status footer that is replaced in place — used
+    to show live tool activity without bloating the transcript with a line
+    per tool call.
+
     Usage:
         streamer = SlackStreamer(client, channel, thread_ts, prefix="🤖 intake")
         await streamer.start()
+        await streamer.set_status("reading files…")
         await streamer.push("first chunk\\n")
+        await streamer.clear_status()
         ...
         await streamer.finalize("✓ done")
     """
@@ -30,6 +36,7 @@ class SlackStreamer:
     thread_ts: str
     prefix: str = ""
     _buffer: str = ""
+    _status: str = ""
     _current_ts: str | None = None
     _last_edit: float = 0.0
     _dirty: bool = False
@@ -65,9 +72,25 @@ class SlackStreamer:
             self._buffer += text
             self._dirty = True
 
+    async def set_status(self, status: str) -> None:
+        """Replace the live status footer (one line, shown below the buffer)."""
+        async with self._lock:
+            if self._status == status:
+                return
+            self._status = status
+            self._dirty = True
+
+    async def clear_status(self) -> None:
+        async with self._lock:
+            if not self._status:
+                return
+            self._status = ""
+            self._dirty = True
+
     async def finalize(self, suffix: str = "") -> None:
         self._stopped = True
         async with self._lock:
+            self._status = ""
             if suffix:
                 self._buffer += ("\n" if self._buffer and not self._buffer.endswith("\n") else "") + suffix
                 self._dirty = True
@@ -108,6 +131,8 @@ class SlackStreamer:
             self._last_edit = now
 
     def _render(self, body: str) -> str:
+        footer = f"\n\n_{self._status}_" if self._status else ""
+        core = body + footer
         if self.prefix:
-            return f"{self.prefix}\n{body}" if body else self.prefix
-        return body or "…"
+            return f"{self.prefix}\n{core}" if core else self.prefix
+        return core or "…"
