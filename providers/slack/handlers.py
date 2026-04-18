@@ -13,7 +13,7 @@ from .files import download_attachments
 from .git_push import commit_and_push
 from .locks import FeatureLocks
 from .router import RoutingError, feature_for_channel, project_for_workspace
-from .runner import run_pass
+from .runner import run_chat_pass, run_pass
 
 
 log = logging.getLogger(__name__)
@@ -122,7 +122,23 @@ def register(app: AsyncApp, cfg: Config, locks: FeatureLocks) -> None:
             )
             return
 
-        await respond(f":question: unknown subcommand `{sub}`. Try `/xorial help`.")
+        # Fallback: no known subcommand matched — treat the whole text as
+        # a free-form chat question, same as `@xorial <anything>`.
+        parent = await client.chat_postMessage(
+            channel=channel_id,
+            text=f":speech_balloon: *chat* — {speaker}",
+        )
+        await run_chat_pass(
+            cfg=cfg,
+            client=client,
+            project=project,
+            channel_id=channel_id,
+            thread_ts=parent["ts"],
+            speaker=speaker,
+            user_message=text,
+            attachments=None,
+            resume_session=None,
+        )
 
 
 def help_text() -> str:
