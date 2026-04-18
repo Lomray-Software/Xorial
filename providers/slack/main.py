@@ -22,9 +22,18 @@ async def amain() -> None:
         token=cfg.bot_token,
         signing_secret=cfg.signing_secret,
     )
+    # Resolve our own bot user id up front so member_joined_channel handler
+    # can tell "I was added" from "somebody else joined the channel".
+    try:
+        auth = await app.client.auth_test()
+        bot_user_id = auth.get("user_id", "")
+    except Exception as e:
+        logging.warning("auth.test failed, welcome posts disabled: %s", e)
+        bot_user_id = ""
+
     locks = FeatureLocks()
     slack_handlers.register(app, cfg, locks)
-    slack_events.register(app, cfg, locks)
+    slack_events.register(app, cfg, locks, bot_user_id=bot_user_id)
 
     handler = AsyncSocketModeHandler(app, cfg.app_token)
     await handler.start_async()

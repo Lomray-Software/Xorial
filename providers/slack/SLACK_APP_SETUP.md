@@ -25,7 +25,9 @@ Features → **OAuth & Permissions** → **Scopes** → **Bot Token Scopes**. Ad
 |---------------------|-------------------------------------------------|
 | `app_mentions:read` | receive `@xorial` events                        |
 | `channels:history`  | read replies in public channels                 |
+| `channels:read`     | receive `member_joined_channel` for public channels (welcome post) |
 | `groups:history`    | read replies in private channels                |
+| `groups:read`       | receive `member_joined_channel` for private channels (welcome post) |
 | `chat:write`        | post + edit streaming messages                  |
 | `commands`          | register the `/xorial` slash command            |
 | `files:read`        | download attachments users drop into a thread   |
@@ -54,6 +56,7 @@ Features → **Event Subscriptions** → toggle on. Request URL is not needed in
 - `app_mention`
 - `message.channels`
 - `message.groups`
+- `member_joined_channel` — so the bot can post a welcome when invited
 
 (`message.im` and `message.mpim` are not needed — Xorial doesn't do DM flows.)
 

@@ -61,8 +61,36 @@ def _strip_mention(text: str) -> str:
     return re.sub(r"<@[UW][A-Z0-9]+>\s*", "", text or "").strip()
 
 
-def register(app: AsyncApp, cfg: Config, locks: FeatureLocks) -> None:
+def register(app: AsyncApp, cfg: Config, locks: FeatureLocks, bot_user_id: str = "") -> None:
     dedup = DedupCache(maxsize=2000)
+
+    @app.event("member_joined_channel")
+    async def on_member_joined(event, client: AsyncWebClient):
+        # Fires for every join in a subscribed channel. We only care about
+        # our own bot joining — post a welcome. Needs channels:read / groups:read
+        # scopes and member_joined_channel event subscription in the Slack app.
+        if not bot_user_id:
+            return
+        if event.get("user") != bot_user_id:
+            return
+        channel_id = event.get("channel", "")
+        binding = feature_for_channel(cfg, channel_id)
+        if binding:
+            _, feature = binding
+            text = (
+                f":wave: *Xorial, reporting for duty.* This channel is already bound to `{feature}`.\n"
+                f"Run `/xorial status` to see where we are, or `/xorial intake ...` to start a pass."
+            )
+        else:
+            text = (
+                ":wave: *Hey, I'm Xorial* — your AI planning sidekick.\n"
+                "Bold of you to let me in. Hit `/xorial help` to peek under the hood, "
+                "or skip the tour with `/xorial new feat <name>`."
+            )
+        try:
+            await client.chat_postMessage(channel=channel_id, text=text)
+        except Exception as e:
+            log.warning("welcome post failed in %s: %s", channel_id, e)
 
     @app.event("message")
     async def on_message(event, client: AsyncWebClient):
