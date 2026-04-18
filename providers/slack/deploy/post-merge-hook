@@ -1,0 +1,16 @@
+#!/bin/bash
+# Post-merge git hook — fires after every successful `git pull` that
+# brings new commits. If the slack provider code changed, write a flag
+# that the bot's restart_watcher picks up. The bot self-exits when it
+# reaches an idle moment; launchd (com.jani.xorial-slack) respawns it
+# with the new code.
+#
+# Installed by providers/slack/deploy/install.sh into
+# <xorial-root>/.git/hooks/post-merge
+set -eu
+
+changed=$(git diff --name-only HEAD@{1} HEAD -- providers/slack/ 2>/dev/null || true)
+if [ -n "$changed" ]; then
+  mkdir -p /tmp
+  touch /tmp/xorial-slack.restart-pending
+fi

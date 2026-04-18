@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.jani.xorial-sync</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>-lc</string>
+        <string>if /usr/bin/git -C __XORIAL_ROOT__ pull --quiet 2>>__LOGS_DIR__/xorial-sync.log; then /bin/date +%s > __LOGS_DIR__/xorial-sync.last; else echo "$(date '+%Y-%m-%d %H:%M:%S') pull failed" >> __LOGS_DIR__/xorial-sync.log; fi</string>
+    </array>
+    <key>StartInterval</key>
+    <integer>60</integer>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>__LOGS_DIR__/xorial-sync.stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>__LOGS_DIR__/xorial-sync.stderr.log</string>
+</dict>
+</plist>

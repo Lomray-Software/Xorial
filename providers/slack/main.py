@@ -7,6 +7,8 @@ from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
 
 from . import events as slack_events
 from . import handlers as slack_handlers
+from . import restart_watcher
+from .activity import tracker
 from .config import ConfigError, load
 from .locks import FeatureLocks
 
@@ -34,6 +36,10 @@ async def amain() -> None:
     locks = FeatureLocks()
     slack_handlers.register(app, cfg, locks)
     slack_events.register(app, cfg, locks, bot_user_id=bot_user_id)
+
+    # Background task: watches for a restart flag from the post-merge hook,
+    # self-exits when idle so launchd respawns us with fresh code.
+    asyncio.create_task(restart_watcher.run(tracker))
 
     handler = AsyncSocketModeHandler(app, cfg.app_token)
     await handler.start_async()

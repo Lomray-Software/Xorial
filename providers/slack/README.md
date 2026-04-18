@@ -65,6 +65,10 @@ Start the bot:
 
 Python 3.11+ is required.
 
+For a supervised, auto-restart-on-pull deployment on macOS, use the
+launchd setup in [`deploy/README.md`](deploy/README.md) — one-shot
+`./deploy/install.sh` wires up git-sync + KeepAlive + post-merge hook.
+
 ## Slack commands
 
 | Command                                         | Purpose                                            |

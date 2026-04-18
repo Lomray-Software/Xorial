@@ -13,6 +13,7 @@ import logging
 from slack_sdk.web.async_client import AsyncWebClient
 
 from . import thread_state
+from .activity import tracker
 from .config import Config, Project
 from .git_push import commit_and_push
 from .invoker import run_chat, run_role
@@ -52,6 +53,7 @@ async def run_pass(
 
     lock = await locks.get(project.key, feature)
     async with lock:
+        tracker.start()
         try:
             session_id = ""
             cost = None
@@ -91,6 +93,8 @@ async def run_pass(
         except Exception as e:
             log.exception("run_pass failed")
             await streamer.finalize(f":x: failed: {e}")
+        finally:
+            tracker.end()
 
 
 async def run_chat_pass(
@@ -119,6 +123,7 @@ async def run_chat_pass(
     )
     await streamer.start()
 
+    tracker.start()
     try:
         session_id = ""
         cost = None
@@ -149,3 +154,5 @@ async def run_chat_pass(
     except Exception as e:
         log.exception("run_chat_pass failed")
         await streamer.finalize(f":x: failed: {e}")
+    finally:
+        tracker.end()
