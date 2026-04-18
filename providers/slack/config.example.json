@@ -1,0 +1,9 @@
+{
+  "bot_token": "xoxb-REPLACE-ME",
+  "app_token": "xapp-REPLACE-ME",
+  "signing_secret": "REPLACE-ME",
+  "anthropic_api_key": "sk-ant-REPLACE-ME",
+  "projects_dir": "/absolute/path/to/project-clones",
+  "default_model": "claude-opus-4-6",
+  "log_level": "INFO"
+}

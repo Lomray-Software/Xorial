@@ -1,0 +1,7 @@
+{
+  "workspaces": {
+    "T01ABCDE": {
+      "project": "myapp"
+    }
+  }
+}

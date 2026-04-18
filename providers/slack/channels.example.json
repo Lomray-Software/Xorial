@@ -1,0 +1,8 @@
+{
+  "channels": {
+    "C01XYZCHANNEL": {
+      "project": "myapp",
+      "feature": "feat/age-verification"
+    }
+  }
+}

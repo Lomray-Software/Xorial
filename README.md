@@ -68,6 +68,9 @@ Xorial/
       chat.md                    ← quick-start guide for interactive agent chats
   conductor/                     ← Python daemon (automated mode)
     main.py                      ← entry point
+  providers/
+    slack/                       ← central Slack bot for intake/orchestrator/critic passes
+      main.py, handlers.py, invoker.py, ...
 
 <project>/.xorial/              ← per-project (not in this repo)
   config.json                    ← xorial_path, instance_name, telegram credentials
@@ -145,6 +148,23 @@ Start your pass.
 ```
 
 When in doubt, use `chat.md` — it maps your intent to the correct role.
+
+---
+
+## How to run (Slack mode)
+
+For teams that want planning (intake / orchestrator / critic) to live in Slack with every teammate sharing one coherent `.xorial/` folder on `main`:
+
+```bash
+cd providers/slack
+cp config.example.json config.json     # fill in Slack + Anthropic credentials
+cp projects.example.json projects.json # register code projects
+./run.sh
+```
+
+Slash commands: `/xorial new feat <name>`, `/xorial intake`, `/xorial orchestrate`, `/xorial critic`, `/xorial list`, `/xorial status`, `/xorial whoami`.
+
+Full guide: `providers/slack/README.md`.
 
 ---
 

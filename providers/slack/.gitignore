@@ -1,0 +1,12 @@
+config.json
+projects.json
+workspaces.json
+channels.json
+users.json
+threads.json
+state.db
+state.db-journal
+logs/
+__pycache__/
+*.pyc
+.venv/

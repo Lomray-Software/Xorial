@@ -1,0 +1,12 @@
+{
+  "projects": {
+    "myapp": {
+      "name": "MyApp",
+      "xorial_path": "/Users/you/work/Xorial",
+      "project_root": "/Users/you/xorial-projects/myapp",
+      "git_remote": "git@github.com:acme/myapp.git",
+      "git_branch": "main",
+      "auto_push": true
+    }
+  }
+}

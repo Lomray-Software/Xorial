@@ -315,6 +315,7 @@ fi
 GITIGNORE="$PROJECT_ROOT/.gitignore"
 IGNORE_LINES=".xorial/config.json
 .xorial/agent.pid
+.xorial/tmp/
 .xorial/context/work/**/tmp/"
 
 if [ -f "$GITIGNORE" ]; then
