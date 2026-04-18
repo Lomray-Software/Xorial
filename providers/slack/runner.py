@@ -24,6 +24,38 @@ from .slack_streamer import SlackStreamer
 log = logging.getLogger(__name__)
 
 
+_ACTIVITY = ("tool", "thinking")
+
+
+async def _pump(streamer: SlackStreamer, events) -> tuple[str, float | None]:
+    """Render RunEvents into the streamer, keeping tool/thinking markers on
+    the same line (`🔧 Read · Read · Bash`) and breaking to a new line only
+    around real text content. Returns (session_id, cost) from ResultMessage.
+    """
+    session_id, cost = "", None
+    prev: str | None = None
+    async for ev in events:
+        if ev.kind == "result":
+            session_id, cost = ev.session_id, ev.cost_usd
+            continue
+        if ev.kind == "text":
+            if prev in _ACTIVITY:
+                await streamer.push("\n")
+            await streamer.push(ev.text)
+        elif ev.kind == "tool":
+            if prev in _ACTIVITY:
+                await streamer.push(" · ")
+            elif prev == "text":
+                await streamer.push("\n")
+            await streamer.push(ev.text)
+        elif ev.kind == "thinking":
+            if prev == "text":
+                await streamer.push("\n")
+            await streamer.push(ev.text)
+        prev = ev.kind
+    return session_id, cost
+
+
 async def run_pass(
     *,
     cfg: Config,
@@ -55,27 +87,19 @@ async def run_pass(
     async with lock:
         tracker.start()
         try:
-            session_id = ""
-            cost = None
-            async for ev in run_role(
-                cfg=cfg,
-                project=project,
-                role=role,
-                feature=feature,
-                speaker=speaker,
-                user_message=user_message,
-                attachments=attachments,
-                resume_session=resume_session,
-            ):
-                if ev.kind == "text":
-                    await streamer.push(ev.text)
-                elif ev.kind == "tool":
-                    await streamer.push(f"\n{ev.text}\n")
-                elif ev.kind == "thinking":
-                    await streamer.push(ev.text)
-                elif ev.kind == "result":
-                    session_id = ev.session_id
-                    cost = ev.cost_usd
+            session_id, cost = await _pump(
+                streamer,
+                run_role(
+                    cfg=cfg,
+                    project=project,
+                    role=role,
+                    feature=feature,
+                    speaker=speaker,
+                    user_message=user_message,
+                    attachments=attachments,
+                    resume_session=resume_session,
+                ),
+            )
 
             if session_id:
                 thread_state.update_session(channel_id, thread_ts, session_id, speaker)
@@ -124,22 +148,16 @@ async def run_chat_pass(
 
     tracker.start()
     try:
-        session_id = ""
-        cost = None
-        async for ev in run_chat(
-            cfg=cfg,
-            project=project,
-            user_message=user_message,
-            resume_session=resume_session,
-            attachments=attachments,
-        ):
-            if ev.kind == "text":
-                await streamer.push(ev.text)
-            elif ev.kind == "tool":
-                await streamer.push(f"\n{ev.text}\n")
-            elif ev.kind == "result":
-                session_id = ev.session_id
-                cost = ev.cost_usd
+        session_id, cost = await _pump(
+            streamer,
+            run_chat(
+                cfg=cfg,
+                project=project,
+                user_message=user_message,
+                resume_session=resume_session,
+                attachments=attachments,
+            ),
+        )
 
         if session_id:
             thread_state.update_session(channel_id, thread_ts, session_id, speaker)
