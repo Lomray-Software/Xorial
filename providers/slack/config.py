@@ -46,7 +46,8 @@ class Config:
     signing_secret: str
     anthropic_api_key: str
     projects_dir: str
-    default_model: str = "claude-opus-4-6"
+    default_model: str = "claude-opus-4-7"
+    chat_model: str = "claude-sonnet-4-6"
     log_level: str = "INFO"
     projects: dict[str, Project] = field(default_factory=dict)
     workspaces: dict[str, str] = field(default_factory=dict)   # team_id -> project_key
@@ -144,7 +145,8 @@ def load() -> Config:
         signing_secret=cfg["signing_secret"],
         anthropic_api_key=cfg["anthropic_api_key"],
         projects_dir=cfg["projects_dir"],
-        default_model=cfg.get("default_model", "claude-opus-4-6"),
+        default_model=cfg.get("default_model", "claude-opus-4-7"),
+        chat_model=cfg.get("chat_model", "claude-sonnet-4-6"),
         log_level=cfg.get("log_level", "INFO"),
         projects=projects,
         workspaces=workspaces,

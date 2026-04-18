@@ -90,3 +90,19 @@ def close(channel_id: str, thread_ts: str) -> None:
     threads = data.setdefault("threads", {})
     threads.pop(_key(channel_id, thread_ts), None)
     storage.write("threads", data)
+
+
+def drop_for_feature(project_key: str, feature: str) -> int:
+    """Purge every thread entry tied to this project's feature.
+    Returns number of entries removed."""
+    data = storage.read("threads")
+    threads = data.setdefault("threads", {})
+    to_drop = [
+        k for k, e in threads.items()
+        if e.get("project") == project_key and e.get("feature") == feature
+    ]
+    for k in to_drop:
+        del threads[k]
+    if to_drop:
+        storage.write("threads", data)
+    return len(to_drop)

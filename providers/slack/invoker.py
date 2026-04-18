@@ -141,3 +141,72 @@ async def run_role(
                 session_id=message.session_id or "",
                 cost_usd=message.total_cost_usd,
             )
+
+
+CHAT_SYSTEM_PROMPT = """You are Xorial, a Slack bot that orchestrates AI-driven software delivery.
+You help users orient themselves: what commands exist, what the workflow is, what to do next.
+
+Commands you know:
+- `/xorial help | whoami | register <name> | list | status`
+- `/xorial new <feat|fix|refactor|chore> <name>` — create feature folder + bind this channel
+- `/xorial bind <type>/<name>` — bind channel to an existing feature
+- `/xorial unbind` — drop the channel binding
+- `/xorial delete <type>/<name> [confirm]` — hard-delete a feature (folder + bindings + threads)
+- `/xorial intake | orchestrate | critic [message]` — run a planning role
+- `@xorial <role> [message]` — same as slash, from the keyboard
+- `@xorial <anything else>` — this chat (where you are now)
+
+Typical workflow: `new` or `bind` a feature → `intake` (gather requirements) → `orchestrate` (decompose) → `critic` (review).
+
+Style:
+- Answer in 2-4 sentences by default.
+- Friendly, direct, a little cheeky matches Xorial's voice.
+- If the user seems lost, point at a concrete next command.
+- You can read the current project files with Read/Glob/Grep if the question needs it. Don't write anything.
+"""
+
+
+async def run_chat(
+    cfg: Config,
+    project: Project,
+    user_message: str,
+    resume_session: str | None = None,
+    attachments: list[str] | None = None,
+) -> AsyncIterator[RunEvent]:
+    """Free-form chat mode: the bot answers orientation / help / casual
+    questions in a thread. Read-only tools, no git commit, Sonnet-class model.
+    """
+    env = dict(os.environ)
+    if cfg.anthropic_api_key:
+        env["ANTHROPIC_API_KEY"] = cfg.anthropic_api_key
+
+    options = ClaudeAgentOptions(
+        model=cfg.chat_model,
+        cwd=project.project_root,
+        system_prompt=CHAT_SYSTEM_PROMPT,
+        allowed_tools=["Read", "Glob", "Grep", "WebFetch"],
+        permission_mode="bypassPermissions",
+        env=env,
+        resume=resume_session,
+    )
+
+    prompt = user_message or "(the user @-mentioned you with no text — greet and orient them)"
+    if attachments:
+        parts = [prompt, "", "Attached files (absolute paths — Read them as needed):"]
+        for p in attachments:
+            parts.append(f"- {p}")
+        prompt = "\n".join(parts)
+
+    async for message in query(prompt=prompt, options=options):
+        if isinstance(message, AssistantMessage):
+            for block in message.content:
+                if isinstance(block, TextBlock):
+                    yield RunEvent(kind="text", text=block.text)
+                elif isinstance(block, ToolUseBlock):
+                    yield RunEvent(kind="tool", text=f"🔧 {block.name}")
+        elif isinstance(message, ResultMessage):
+            yield RunEvent(
+                kind="result",
+                session_id=message.session_id or "",
+                cost_usd=message.total_cost_usd,
+            )

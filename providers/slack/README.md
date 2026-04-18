@@ -50,7 +50,8 @@ Fill in `config.json`:
 - `bot_token` / `app_token` / `signing_secret` — from your Slack app (see `SLACK_APP_SETUP.md`)
 - `anthropic_api_key` — billing key the Agent SDK will use
 - `projects_dir` — absolute dir where project clones live (informational)
-- `default_model` — e.g. `claude-opus-4-6`
+- `default_model` — used for role passes (intake/orchestrator/critic); default `claude-opus-4-7`
+- `chat_model` — used for `@xorial <anything>` chat replies; default `claude-sonnet-4-6`
 
 Fill in `projects.json` with one entry per code project. `project_root` must point to a working clone of the repo; the bot writes planning artifacts into `.xorial/` inside it and pushes to `git_branch`.
 
@@ -75,6 +76,7 @@ Python 3.11+ is required.
 | `/xorial new <feat\|fix\|refactor\|chore> <name>` | create folder + bind this channel                  |
 | `/xorial bind <type>/<name>`                    | bind this channel to an existing feature           |
 | `/xorial unbind`                                | remove binding                                     |
+| `/xorial delete <type>/<name> [confirm]`        | hard-delete a feature (folder + bindings + threads + push) |
 | `/xorial status`                                | show `status.json` for the bound feature           |
 | `/xorial intake [message]`                      | run intake role in a new thread                    |
 | `/xorial orchestrate [message]`                 | run orchestrator                                   |
@@ -93,6 +95,8 @@ Once a role pass posts its parent message, the bot tracks the thread. Any subseq
 ### @mentions
 
 - `@xorial intake [message]` in a bound channel — same as `/xorial intake`, useful when you'd rather type than open the slash menu.
+- `@xorial help` — returns the static command list; no tokens spent.
+- `@xorial <anything else>` — **chat mode**. The bot replies in a thread via the `chat_model` (Sonnet by default), read-only tools, no git commit. Follow-up replies in the thread continue the session. Good for "what do I do next?" / "what's in this repo?" type questions.
 - `@xorial` inside a tracked thread — equivalent to a plain reply; kept as an explicit affordance.
 
 Management commands (`new`, `bind`, `list`, `status`, etc.) stay on the slash so there is one obvious surface for them.

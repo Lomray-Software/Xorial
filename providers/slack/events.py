@@ -25,9 +25,10 @@ from .attribution import resolve_speaker
 from .config import Config
 from .dedup import DedupCache
 from .files import download_attachments
+from .handlers import help_text
 from .locks import FeatureLocks
 from .router import RoutingError, feature_for_channel, project_for_workspace
-from .runner import run_pass
+from .runner import run_chat_pass, run_pass
 
 
 log = logging.getLogger(__name__)
@@ -136,7 +137,25 @@ def register(app: AsyncApp, cfg: Config, locks: FeatureLocks, bot_user_id: str =
         role = entry.get("role", "")
         feature = entry.get("feature", "")
         resume = entry.get("session_id") or None
-        if not role or not feature:
+        if not role:
+            return
+
+        if role == "chat":
+            # Chat threads aren't bound to a feature and aren't locked.
+            await run_chat_pass(
+                cfg=cfg,
+                client=client,
+                project=project,
+                channel_id=channel_id,
+                thread_ts=thread_ts,
+                speaker=speaker,
+                user_message=text,
+                attachments=attachments or None,
+                resume_session=resume,
+            )
+            return
+
+        if not feature:
             return
 
         if locks.is_busy(project.key, feature):
@@ -186,30 +205,16 @@ def register(app: AsyncApp, cfg: Config, locks: FeatureLocks, bot_user_id: str =
             # Tracked thread case: on_message will process (or already did).
             return
 
-        # Not in a thread → treat as "start a role pass" shortcut.
-        #   "@xorial intake make sure JWT is used"
+        # Not in a thread → figure out what the user wants:
+        #   "@xorial help"              → static help text (zero-cost)
+        #   "@xorial intake ..."        → start a role pass
+        #   "@xorial anything else"     → free-form chat-mode pass
         key = _dedup_key(event)
         if dedup.seen(key):
             return
         team_id = event.get("team", "")
         user_id = event.get("user", "")
         text = _strip_mention(event.get("text", ""))
-        parts = text.split(maxsplit=1)
-        if not parts:
-            await client.chat_postMessage(
-                channel=channel_id,
-                text="Usage: `@xorial intake|orchestrate|critic [message]`",
-            )
-            return
-        sub = parts[0].lower()
-        if sub not in ROLE_ALIAS:
-            await client.chat_postMessage(
-                channel=channel_id,
-                text=f"Unknown role `{sub}`. Use: intake, orchestrate, critic.",
-            )
-            return
-        role = ROLE_ALIAS[sub]
-        message = parts[1] if len(parts) > 1 else ""
 
         try:
             project = project_for_workspace(cfg, team_id)
@@ -217,41 +222,72 @@ def register(app: AsyncApp, cfg: Config, locks: FeatureLocks, bot_user_id: str =
             await client.chat_postMessage(channel=channel_id, text=f":warning: {e}")
             return
 
-        binding = feature_for_channel(cfg, channel_id)
-        if binding is None:
-            await client.chat_postMessage(
-                channel=channel_id,
-                text=":warning: channel is not bound. Use `/xorial new ...` or `/xorial bind <feature>` first.",
-            )
-            return
-        bound_project, feature = binding
-        if bound_project.key != project.key:
-            await client.chat_postMessage(
-                channel=channel_id,
-                text=":warning: channel bound to a different project.",
-            )
-            return
-
-        if locks.is_busy(project.key, feature):
-            await client.chat_postMessage(
-                channel=channel_id,
-                text=f":hourglass: `{feature}` already has an agent running.",
-            )
-            return
-
         speaker = resolve_speaker(cfg, user_id, "")
+        parts = text.split(maxsplit=1)
+        first = parts[0].lower() if parts else ""
+
+        # Cheap path: no text or "help" → static help, no LLM.
+        if not parts or first == "help":
+            await client.chat_postMessage(channel=channel_id, text=help_text())
+            return
+
+        # Role shortcut.
+        if first in ROLE_ALIAS:
+            role = ROLE_ALIAS[first]
+            message = parts[1] if len(parts) > 1 else ""
+
+            binding = feature_for_channel(cfg, channel_id)
+            if binding is None:
+                await client.chat_postMessage(
+                    channel=channel_id,
+                    text=":warning: channel is not bound. Use `/xorial new ...` or `/xorial bind <feature>` first.",
+                )
+                return
+            bound_project, feature = binding
+            if bound_project.key != project.key:
+                await client.chat_postMessage(
+                    channel=channel_id,
+                    text=":warning: channel bound to a different project.",
+                )
+                return
+            if locks.is_busy(project.key, feature):
+                await client.chat_postMessage(
+                    channel=channel_id,
+                    text=f":hourglass: `{feature}` already has an agent running.",
+                )
+                return
+
+            parent = await client.chat_postMessage(
+                channel=channel_id,
+                text=f":robot_face: *{role}* on `{feature}` — by {speaker}",
+            )
+            thread_ts = parent["ts"]
+            attachments = await download_attachments(
+                cfg.bot_token, project, thread_ts, event.get("files") or [],
+            )
+            await run_pass(
+                cfg=cfg, locks=locks, client=client,
+                project=project, channel_id=channel_id, thread_ts=thread_ts,
+                role=role, feature=feature, speaker=speaker,
+                user_message=message, attachments=attachments or None,
+                resume_session=None,
+            )
+            return
+
+        # Fallthrough: chat mode. Not tied to a feature; works even in
+        # unbound channels so newcomers can ask "what do I do?".
         parent = await client.chat_postMessage(
             channel=channel_id,
-            text=f":robot_face: *{role}* on `{feature}` — by {speaker}",
+            text=f":speech_balloon: *chat* — {speaker}",
         )
         thread_ts = parent["ts"]
         attachments = await download_attachments(
             cfg.bot_token, project, thread_ts, event.get("files") or [],
         )
-        await run_pass(
-            cfg=cfg, locks=locks, client=client,
-            project=project, channel_id=channel_id, thread_ts=thread_ts,
-            role=role, feature=feature, speaker=speaker,
-            user_message=message, attachments=attachments or None,
+        await run_chat_pass(
+            cfg=cfg, client=client, project=project,
+            channel_id=channel_id, thread_ts=thread_ts,
+            speaker=speaker, user_message=text,
+            attachments=attachments or None,
             resume_session=None,
         )

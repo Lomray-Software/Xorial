@@ -52,6 +52,22 @@ def unbind_channel(channel_id: str) -> None:
         write("channels", data)
 
 
+def unbind_feature_everywhere(project_key: str, feature: str) -> int:
+    """Drop every channel binding pointing to this project's feature.
+    Returns number of bindings removed."""
+    data = read("channels")
+    channels = data.get("channels", {})
+    to_drop = [
+        cid for cid, b in channels.items()
+        if b.get("project") == project_key and b.get("feature") == feature
+    ]
+    for cid in to_drop:
+        del channels[cid]
+    if to_drop:
+        write("channels", data)
+    return len(to_drop)
+
+
 def set_user(user_id: str, instance_name: str) -> None:
     data = read("users")
     data.setdefault("users", {})[user_id] = {"instance_name": instance_name}

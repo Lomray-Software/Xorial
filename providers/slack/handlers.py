@@ -1,14 +1,16 @@
 import logging
 import os
 import shlex
+import shutil
 
 from slack_bolt.async_app import AsyncApp
 from slack_sdk.web.async_client import AsyncWebClient
 
-from . import storage
+from . import storage, thread_state
 from .attribution import resolve_speaker
 from .config import Config, Project
 from .files import download_attachments
+from .git_push import commit_and_push
 from .locks import FeatureLocks
 from .router import RoutingError, feature_for_channel, project_for_workspace
 from .runner import run_pass
@@ -43,7 +45,7 @@ def register(app: AsyncApp, cfg: Config, locks: FeatureLocks) -> None:
         text = body.get("text", "").strip()
         args = _parse(text)
         if not args:
-            await respond(_help_text())
+            await respond(help_text())
             return
 
         sub = args[0].lower()
@@ -61,7 +63,7 @@ def register(app: AsyncApp, cfg: Config, locks: FeatureLocks) -> None:
             return
 
         if sub == "help":
-            await respond(_help_text())
+            await respond(help_text())
             return
 
         if sub == "whoami":
@@ -84,6 +86,10 @@ def register(app: AsyncApp, cfg: Config, locks: FeatureLocks) -> None:
             storage.unbind_channel(channel_id)
             cfg.channels.pop(channel_id, None)
             await respond(":white_check_mark: channel unbound")
+            return
+
+        if sub == "delete":
+            await _cmd_delete(respond, cfg, locks, project, speaker, channel_id, rest)
             return
 
         if sub == "status":
@@ -119,19 +125,21 @@ def register(app: AsyncApp, cfg: Config, locks: FeatureLocks) -> None:
         await respond(f":question: unknown subcommand `{sub}`. Try `/xorial help`.")
 
 
-def _help_text() -> str:
+def help_text() -> str:
     return (
         "*Xorial commands*\n"
         "• `/xorial list` — features in this project\n"
         "• `/xorial new <feat|fix|refactor|chore> <name>` — create feature + bind channel\n"
         "• `/xorial bind <type>/<name>` — bind this channel to an existing feature\n"
-        "• `/xorial unbind` — remove binding\n"
+        "• `/xorial unbind` — remove channel binding\n"
+        "• `/xorial delete <type>/<name> [confirm]` — hard-delete feature (folder + bindings + threads)\n"
         "• `/xorial status` — show feature status\n"
         "• `/xorial intake` — run intake role in a thread\n"
         "• `/xorial orchestrate` — run orchestrator\n"
         "• `/xorial critic` — run critic\n"
         "• `/xorial whoami` — show who you are recorded as\n"
-        "• `/xorial register <name>` — register your speaker identity"
+        "• `/xorial register <name>` — register your speaker identity\n"
+        "• `@xorial <anything>` — ask me questions in chat mode"
     )
 
 
@@ -266,4 +274,88 @@ async def _cmd_run_role(
         user_message=message,
         attachments=None,
         resume_session=None,
+    )
+
+
+async def _cmd_delete(
+    respond,
+    cfg: Config,
+    locks: FeatureLocks,
+    project: Project,
+    speaker: str,
+    channel_id: str,
+    rest: list[str],
+) -> None:
+    """Hard-delete a feature. Two-step (`confirm`) and only runnable from
+    the channel bound to that feature. Also pushes the deletion so main
+    stays clean — history keeps the old content, current tree doesn't."""
+    if not rest:
+        await respond(
+            "Usage: `/xorial delete <type>/<name>` — preview what will be dropped.\n"
+            "Add `confirm` to actually delete: `/xorial delete feat/hello confirm`"
+        )
+        return
+    feature = rest[0]
+    if "/" not in feature:
+        await respond(":warning: feature must include type prefix, e.g. `feat/auth`")
+        return
+    ftype = feature.split("/", 1)[0]
+    if ftype not in VALID_TYPES:
+        await respond(f"Invalid type `{ftype}`. One of: {', '.join(sorted(VALID_TYPES))}")
+        return
+
+    binding = feature_for_channel(cfg, channel_id)
+    if binding is None or binding[1] != feature or binding[0].key != project.key:
+        await respond(
+            f":warning: run `/xorial delete {feature}` from the channel bound to `{feature}`. "
+            "This keeps destructive ops tied to their owning channel."
+        )
+        return
+
+    if locks.is_busy(project.key, feature):
+        await respond(f":hourglass: `{feature}` has an agent running — can't delete now.")
+        return
+
+    path = project.feature_path(feature)
+    if not os.path.isdir(path):
+        await respond(f":warning: feature folder not found at `{path}` — nothing to delete.")
+        return
+
+    # Count impact for the preview (and for the confirmation message).
+    ch_count = sum(
+        1 for b in cfg.channels.values()
+        if b.get("project") == project.key and b.get("feature") == feature
+    )
+    th_data = storage.read("threads").get("threads", {})
+    th_count = sum(
+        1 for e in th_data.values()
+        if e.get("project") == project.key and e.get("feature") == feature
+    )
+
+    confirm = len(rest) > 1 and rest[1].lower() == "confirm"
+    if not confirm:
+        await respond(
+            f":warning: *preview — nothing deleted yet.* `/xorial delete {feature} confirm` to proceed.\n"
+            f"• remove folder `{path}`\n"
+            f"• unbind {ch_count} channel(s) pointing at `{feature}`\n"
+            f"• drop {th_count} tracked thread session(s)\n"
+            f"• commit + push the deletion to `origin/{project.git_branch}`"
+        )
+        return
+
+    # Execute.
+    shutil.rmtree(path)
+    dropped_ch = storage.unbind_feature_everywhere(project.key, feature)
+    for cid in [
+        cid for cid, b in list(cfg.channels.items())
+        if b.get("project") == project.key and b.get("feature") == feature
+    ]:
+        cfg.channels.pop(cid, None)
+    dropped_th = thread_state.drop_for_feature(project.key, feature)
+
+    push_result = await commit_and_push(project, "delete", feature, speaker)
+
+    await respond(
+        f":wastebasket: deleted `{feature}` · unbound {dropped_ch} channel(s) · "
+        f"dropped {dropped_th} thread(s) · {push_result}"
     )
