@@ -274,13 +274,10 @@ def register(app: AsyncApp, cfg: Config, locks: FeatureLocks, bot_user_id: str =
             )
             return
 
-        # Fallthrough: chat mode. Not tied to a feature; works even in
-        # unbound channels so newcomers can ask "what do I do?".
-        parent = await client.chat_postMessage(
-            channel=channel_id,
-            text=f":speech_balloon: *chat* — {speaker}",
-        )
-        thread_ts = parent["ts"]
+        # Fallthrough: chat mode. Reply in a thread rooted at the user's own
+        # message (its `ts` becomes the thread parent) so we don't litter the
+        # channel with bot parent posts.
+        thread_ts = event.get("ts", "")
         attachments = await download_attachments(
             cfg.bot_token, project, thread_ts, event.get("files") or [],
         )

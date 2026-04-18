@@ -119,7 +119,6 @@ async def run_chat_pass(
         client=client,
         channel=channel_id,
         thread_ts=thread_ts,
-        prefix="*chat*" if not resume_session else "*chat* (cont.)",
     )
     await streamer.start()
 
