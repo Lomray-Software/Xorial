@@ -20,10 +20,25 @@ async def _push(cwd: str, branch: str) -> tuple[int, str]:
 async def commit_and_push(project: Project, role: str, feature: str, speaker: str) -> str:
     """git add .xorial + current scope, commit with attribution, push.
 
-    If the push is rejected because the remote moved ahead (someone else
-    pushed between our last pull and now), we attempt a single
-    `git pull --rebase` + retry — planning artifacts rarely conflict, so
-    this covers the common case without surfacing a scary stderr dump.
+    SAFETY INVARIANTS (read before editing this function):
+      - We NEVER use `--force`, `--force-with-lease`, or any other flag
+        that can overwrite remote refs. Every push is a plain
+        `git push origin <branch>`. If the remote has moved, the push
+        is rejected by the server and remote history is untouched —
+        there is no code path here that can drop a teammate's commits
+        from origin.
+      - On a non-fast-forward rejection we try ONE `git pull --rebase`.
+        Rebase only rewrites LOCAL history: it fetches the remote tip,
+        rewinds our local branch to it, then replays ONLY the single
+        xorial commit we just made. Remote commits are preserved and
+        appear below our replayed commit in the final history.
+      - If the rebase hits a conflict, we abort it (`git rebase --abort`)
+        so the working tree is clean. Our local commit is preserved on
+        its original base; the remote still has only its own commits.
+        Nothing is pushed until a human resolves the conflict.
+      - Worst case: our planning artifacts stay local and the thread
+        gets a :warning: asking for manual resolution. Remote never
+        loses data.
 
     Non-fatal on failure — we return a short status line for the thread
     but do not raise, so the pass result is preserved.
@@ -48,22 +63,35 @@ async def commit_and_push(project: Project, role: str, feature: str, speaker: st
     if rc == 0:
         return f":arrow_up: pushed to `{branch}`"
 
-    # Non-fast-forward / fetch-first → pull --rebase and retry once.
-    if "rejected" in err.lower() or "fetch first" in err.lower() or "non-fast-forward" in err.lower():
-        rb_rc, _, rb_err = await _run(
-            "git", "-C", cwd, "pull", "--rebase", "origin", branch,
-        )
-        if rb_rc != 0:
-            return (
-                f":warning: push rejected and auto-rebase failed — resolve manually in `{cwd}`. "
-                f"Commit is local, not pushed. ({rb_err.strip()[:120]})"
-            )
-        rc2, err2 = await _push(cwd, branch)
-        if rc2 == 0:
-            return f":arrow_up: pushed to `{branch}` (rebased on remote first)"
+    low = err.lower()
+    is_non_ff = "rejected" in low or "fetch first" in low or "non-fast-forward" in low
+    if not is_non_ff:
+        return f":x: push failed: {err[:200]}"
+
+    # Remote moved ahead. Rebase our one local commit on top and retry.
+    # Non-destructive for remote: rebase touches only local history.
+    rb_rc, _, rb_err = await _run(
+        "git", "-C", cwd, "pull", "--rebase", "origin", branch,
+    )
+    if rb_rc != 0:
+        # Rebase hit a conflict (or some other failure). Abort to leave
+        # the tree in a clean state — our commit remains on its original
+        # base and nothing is pushed. Remote is untouched.
+        await _run("git", "-C", cwd, "rebase", "--abort")
         return (
-            f":warning: push still rejected after rebase — push manually from `{cwd}`. "
-            f"({err2[:120]})"
+            f":warning: push rejected and auto-rebase hit a conflict — aborted. "
+            f"Your xorial commit is safe locally in `{cwd}`; remote is unchanged. "
+            f"Resolve manually with `git pull --rebase && git push`. "
+            f"({rb_err.strip()[:120]})"
         )
 
-    return f":x: push failed: {err[:200]}"
+    rc2, err2 = await _push(cwd, branch)
+    if rc2 == 0:
+        return f":arrow_up: pushed to `{branch}` (rebased on remote first)"
+    # Second reject usually means a third party pushed during our rebase
+    # window. Still a plain push, still no data loss on either side.
+    return (
+        f":warning: rebase succeeded but second push was rejected too — "
+        f"someone pushed during the retry. Commit is local in `{cwd}`; "
+        f"remote is unchanged. Push manually. ({err2[:120]})"
+    )
