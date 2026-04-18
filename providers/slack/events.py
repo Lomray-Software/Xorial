@@ -78,14 +78,14 @@ def register(app: AsyncApp, cfg: Config, locks: FeatureLocks, bot_user_id: str =
         if binding:
             _, feature = binding
             text = (
-                f":wave: *Xorial, reporting for duty.* This channel is already bound to `{feature}`.\n"
-                f"Run `/xorial status` to see where we are, or `/xorial intake ...` to start a pass."
+                f"*Xorial is back.* This channel is already bound to `{feature}`.\n"
+                f"`/xorial status` for where we stand — or `/xorial intake ...` to kick off a pass."
             )
         else:
             text = (
-                ":wave: *Hey, I'm Xorial* — your AI planning sidekick.\n"
-                "Bold of you to let me in. Hit `/xorial help` to peek under the hood, "
-                "or skip the tour with `/xorial new feat <name>`."
+                "*Xorial has entered the chat.* Things just got serious.\n"
+                "`/xorial help` for the manifesto. `/xorial new feat <name>` to start a new feature — "
+                "or `/xorial bind feat/<name>` if it already exists."
             )
         try:
             await client.chat_postMessage(channel=channel_id, text=text)
