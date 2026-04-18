@@ -34,6 +34,11 @@ class Project:
         return os.path.join(self.work_dir, feature)
 
 
+class ConfigError(Exception):
+    """Raised for human-facing configuration problems. main() prints the
+    message and exits cleanly, no stacktrace."""
+
+
 @dataclass
 class Config:
     bot_token: str
@@ -56,30 +61,79 @@ def _load_json(path: Path) -> dict:
         return json.load(f)
 
 
+REQUIRED_CONFIG_KEYS = (
+    "bot_token",
+    "app_token",
+    "signing_secret",
+    "anthropic_api_key",
+    "projects_dir",
+)
+
+
+def _require_file(path: Path, hint: str) -> dict:
+    if not path.exists():
+        raise ConfigError(
+            f"Missing {path.name}\n"
+            f"  path:  {path}\n"
+            f"  fix:   {hint}"
+        )
+    try:
+        return _load_json(path)
+    except json.JSONDecodeError as e:
+        raise ConfigError(f"Invalid JSON in {path}: {e}") from None
+
+
 def load() -> Config:
-    cfg = _load_json(HERE / "config.json")
-    if not cfg:
-        raise FileNotFoundError(
-            f"Missing {HERE / 'config.json'} — copy config.example.json and fill it."
+    cfg = _require_file(
+        HERE / "config.json",
+        "cp config.example.json config.json && edit it (see SLACK_APP_SETUP.md)",
+    )
+
+    missing = [k for k in REQUIRED_CONFIG_KEYS if not cfg.get(k)]
+    if missing:
+        raise ConfigError(
+            "config.json is missing required fields: " + ", ".join(missing)
+            + "\n  see SLACK_APP_SETUP.md for where to get Slack tokens."
         )
 
-    projects_data = _load_json(HERE / "projects.json").get("projects", {})
-    workspaces_data = _load_json(HERE / "workspaces.json").get("workspaces", {})
+    projects_data = _require_file(
+        HERE / "projects.json",
+        "cp projects.example.json projects.json && add at least one project entry",
+    ).get("projects", {})
+    if not projects_data:
+        raise ConfigError(
+            "projects.json has no projects — add at least one entry before starting."
+        )
+
+    workspaces_data = _require_file(
+        HERE / "workspaces.json",
+        "cp workspaces.example.json workspaces.json && map your Slack team_id to a project key",
+    ).get("workspaces", {})
+    if not workspaces_data:
+        raise ConfigError(
+            "workspaces.json has no entries — map your Slack team_id (T...) to a project key."
+        )
+
     channels_data = _load_json(HERE / "channels.json").get("channels", {})
     users_data = _load_json(HERE / "users.json").get("users", {})
 
-    projects = {
-        key: Project(
-            key=key,
-            name=p.get("name", key),
-            xorial_path=p["xorial_path"],
-            project_root=p["project_root"],
-            git_remote=p.get("git_remote", ""),
-            git_branch=p.get("git_branch", "main"),
-            auto_push=bool(p.get("auto_push", True)),
-        )
-        for key, p in projects_data.items()
-    }
+    try:
+        projects = {
+            key: Project(
+                key=key,
+                name=p.get("name", key),
+                xorial_path=p["xorial_path"],
+                project_root=p["project_root"],
+                git_remote=p.get("git_remote", ""),
+                git_branch=p.get("git_branch", "main"),
+                auto_push=bool(p.get("auto_push", True)),
+            )
+            for key, p in projects_data.items()
+        }
+    except KeyError as e:
+        raise ConfigError(
+            f"projects.json entry is missing field {e}. Each project needs xorial_path and project_root."
+        ) from None
 
     workspaces = {team_id: w["project"] for team_id, w in workspaces_data.items()}
     users = {uid: u["instance_name"] for uid, u in users_data.items()}
