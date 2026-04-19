@@ -303,21 +303,37 @@ async def _cmd_delete(
         await respond(f"Invalid type `{ftype}`. One of: {', '.join(sorted(VALID_TYPES))}")
         return
 
-    binding = feature_for_channel(cfg, channel_id)
-    if binding is None or binding[1] != feature or binding[0].key != project.key:
+    # Existence check first — the feature may simply not exist (typo in the
+    # name, wrong project). This gives a clearer error than bouncing off the
+    # channel-binding gate for a nonexistent feature.
+    path = project.feature_path(feature)
+    if not os.path.isdir(path):
         await respond(
-            f":warning: run `/xorial delete {feature}` from the channel bound to `{feature}`. "
-            "This keeps destructive ops tied to their owning channel."
+            f":warning: no such feature `{feature}` in project `{project.name}`. "
+            f"Run `/xorial list` to see the real names."
+        )
+        return
+
+    binding = feature_for_channel(cfg, channel_id)
+    if binding is None:
+        await respond(
+            f":warning: this channel is not bound to any feature. "
+            f"`/xorial delete` must run from the channel bound to `{feature}` — "
+            f"destructive ops are tied to their owning channel."
+        )
+        return
+
+    bound_project, bound_feature = binding
+    if bound_project.key != project.key or bound_feature != feature:
+        await respond(
+            f":warning: this channel is bound to `{bound_feature}`, not `{feature}`. "
+            f"Run `/xorial delete {feature} confirm` from the channel bound to `{feature}`. "
+            f"(Destructive ops are tied to their owning channel.)"
         )
         return
 
     if locks.is_busy(project.key, feature):
         await respond(f":hourglass: `{feature}` has an agent running — can't delete now.")
-        return
-
-    path = project.feature_path(feature)
-    if not os.path.isdir(path):
-        await respond(f":warning: feature folder not found at `{path}` — nothing to delete.")
         return
 
     # Count impact for the preview (and for the confirmation message).
