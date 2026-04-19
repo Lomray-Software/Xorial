@@ -36,15 +36,6 @@ Examples:
 
 Body (optional): wrap at ~72 chars, blank line after subject. Explain **why**, not what — the diff already shows what.
 
-### Forbidden trailers
-
-Commit messages must NOT contain:
-
-- `Co-Authored-By: Claude …` or any other AI-attribution trailer.
-- `🤖 Generated with [Claude Code]` or similar generator footers.
-
-GitHub parses trailers and lists named identities as contributors. AI tools do not belong in the contributors list.
-
 ## Pull requests
 
 ### Title
@@ -69,8 +60,6 @@ Xorial: <type>/<short-name>
 ```
 
 The `Xorial:` line is load-bearing — it lets the PR reviewer role match the PR to its feature folder when the branch name alone is not enough (e.g. cherry-picks onto a release branch, or stacked PRs).
-
-Do not append AI generator footers to the body either.
 
 ### Review etiquette
 
