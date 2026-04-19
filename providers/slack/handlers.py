@@ -347,11 +347,13 @@ async def _cmd_delete(
         if e.get("project") == project.key and e.get("feature") == feature
     )
 
+    rel_path = os.path.relpath(path, project.project_root)
+
     confirm = len(rest) > 1 and rest[1].lower() == "confirm"
     if not confirm:
         await respond(
             f":warning: *preview — nothing deleted yet.* `/xorial delete {feature} confirm` to proceed.\n"
-            f"• remove folder `{path}`\n"
+            f"• remove folder `{rel_path}`\n"
             f"• unbind {ch_count} channel(s) pointing at `{feature}`\n"
             f"• drop {th_count} tracked thread session(s)\n"
             f"• commit + push the deletion to `origin/{project.git_branch}`"
