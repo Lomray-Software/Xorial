@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import json
 import re
 import subprocess
 import sys
@@ -214,6 +215,155 @@ def check_markdown_role_refs(f: Findings) -> None:
                     )
 
 
+# ---------- Check: JSON schema ↔ consumer Python -------------------------
+#
+# For each (schema JSON file, consumer Python files, variable names that
+# hold the parsed JSON in those consumers), compare:
+#
+#   JSON keys → var.get("X") / var["X"] / "X" in var  accesses
+#
+# Flags divergence in both directions:
+#   - key in JSON but no consumer accesses it → likely dead doc entry
+#   - consumer accesses key that isn't in JSON → likely missing from example
+#
+# Keys beginning with `_` in the JSON are treated as comments (Xorial
+# convention: `_comment`, `_scopes_comment`) and skipped.
+#
+# `scope` selects which keys in the JSON to check:
+#   - "flat"         : top-level non-underscore keys
+#   - "nested-any"   : union of keys across all values under `scope_key`
+#
+# Per-pair whitelists let us silence known cross-cutting accesses without
+# turning this check into a no-op.
+
+SCHEMA_PAIRS: list[dict] = [
+    {
+        "example": "providers/slack/config.example.json",
+        "scope": "flat",
+        "consumers": ["providers/slack/config.py"],
+        # `cfg` holds the parsed config.json in load().
+        "consumer_vars": {"cfg"},
+        "whitelist_code": set(),
+        "whitelist_json": set(),
+    },
+    {
+        "example": "providers/slack/projects.example.json",
+        "scope": "nested-any",
+        "scope_key": "projects",
+        "consumers": ["providers/slack/config.py"],
+        # `p` is the per-project dict inside the projects.items() loop.
+        "consumer_vars": {"p"},
+        "whitelist_code": set(),
+        "whitelist_json": set(),
+    },
+    {
+        "example": "core/templates/pipeline.json",
+        "scope": "flat",
+        "consumers": ["conductor/pipeline.py"],
+        # `base` = core template, `project` = per-project override.
+        "consumer_vars": {"base", "project"},
+        "whitelist_code": set(),
+        "whitelist_json": {
+            # `scopes` is consumed by the orchestrator role at runtime via its
+            # Read tool (see core/roles/10-orchestrator.md), not by the
+            # conductor Python — AST scan can't see agent-driven reads.
+            "scopes",
+        },
+    },
+]
+
+
+def _json_keys(path: Path, pair: dict) -> set[str]:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    scope = pair["scope"]
+    if scope == "flat":
+        return {k for k in data.keys() if not k.startswith("_")}
+    if scope == "nested-any":
+        container = data.get(pair["scope_key"], {})
+        if not isinstance(container, dict):
+            return set()
+        out: set[str] = set()
+        for v in container.values():
+            if isinstance(v, dict):
+                out |= {k for k in v.keys() if not k.startswith("_")}
+        return out
+    raise ValueError(f"unknown schema-pair scope: {scope}")
+
+
+def _var_accesses(py_path: Path, var_names: set[str]) -> set[str]:
+    """String literals used as var.get("X") / var["X"] / "X" in var."""
+    tree = ast.parse(py_path.read_text(encoding="utf-8"))
+    out: set[str] = set()
+    for node in ast.walk(tree):
+        # var.get("X", ...)
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "get"
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id in var_names
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str)
+        ):
+            out.add(node.args[0].value)
+        # var["X"]
+        if (
+            isinstance(node, ast.Subscript)
+            and isinstance(node.value, ast.Name)
+            and node.value.id in var_names
+        ):
+            slc = node.slice
+            if isinstance(slc, ast.Constant) and isinstance(slc.value, str):
+                out.add(slc.value)
+        # "X" in var
+        if isinstance(node, ast.Compare):
+            for op, rhs in zip(node.ops, node.comparators):
+                if (
+                    isinstance(op, ast.In)
+                    and isinstance(node.left, ast.Constant)
+                    and isinstance(node.left.value, str)
+                    and isinstance(rhs, ast.Name)
+                    and rhs.id in var_names
+                ):
+                    out.add(node.left.value)
+    return out
+
+
+def check_schema_pairs(f: Findings) -> None:
+    for pair in SCHEMA_PAIRS:
+        example = REPO / pair["example"]
+        if not example.exists():
+            f.add(f"schema pair references missing file: {pair['example']}")
+            continue
+
+        json_keys = _json_keys(example, pair)
+
+        code_keys: set[str] = set()
+        for consumer in pair["consumers"]:
+            cp = REPO / consumer
+            if not cp.exists():
+                f.add(f"schema pair references missing consumer: {consumer}")
+                continue
+            code_keys |= _var_accesses(cp, set(pair["consumer_vars"]))
+
+        dead_in_example = (json_keys - code_keys) - pair["whitelist_json"]
+        missing_in_example = (code_keys - json_keys) - pair["whitelist_code"]
+
+        for key in sorted(dead_in_example):
+            f.add(
+                f"{pair['example']} defines key '{key}' but no consumer "
+                f"({', '.join(pair['consumers'])}) reads it — dead doc key or "
+                f"code regressed"
+            )
+        for key in sorted(missing_in_example):
+            f.add(
+                f"{', '.join(pair['consumers'])} reads key '{key}' but it is "
+                f"absent from {pair['example']} — example/template out of sync "
+                f"with code"
+            )
+
+
 # ---------- Check: docs stale while nearby code moved ---------------------
 
 STALE_DAYS = 60
@@ -286,6 +436,7 @@ def main() -> int:
     check_role_files(f)
     check_slash_commands(f)
     check_markdown_role_refs(f)
+    check_schema_pairs(f)
     check_staleness(f)
 
     if not f:
