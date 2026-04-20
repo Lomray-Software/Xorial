@@ -79,7 +79,7 @@ For each `work/{type}/{name}/` folder:
 - **No node for `work/{type}/{name}/{name}.md`** — add a `type: "file"` node inside the `grp-{type}` group. Position it to the right of the last existing node in that group (append-only layout: `x = max_x_in_group + 300`, `y = same row as last node`). Copy `width` and `height` from a neighbouring file node.
 - **Node exists** — leave its coordinates, styling, and edges intact. Don't touch it.
 
-For every node whose `file` path no longer exists on disk, remove the node and any edges referencing its id.
+For every node whose `file` path starts with `work/` and no longer exists on disk, remove the node and any edges referencing its id. Nodes pointing at paths outside `work/` are human-maintained — leave them alone even if the file is missing.
 
 If the `grp-{type}` group doesn't exist yet, skip that type silently and note it in your final summary — human will seed the group manually.
 
