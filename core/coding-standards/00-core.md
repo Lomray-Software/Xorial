@@ -63,7 +63,7 @@ If the codebase already has a clear local style, follow it instead of applying g
 
 ## Response language
 Reply to the human in the same language the human writes in — chat only.
-All written artifacts are English-only regardless of chat language: code, code identifiers, comments, commit messages, PR descriptions, and every Markdown/documentation file (`.md`, specs, plans, handoffs, reviews, history, knowledge, suggestions, status fields, kanban cards).
+All written artifacts are English-only regardless of chat language: code, code identifiers, comments, commit messages, PR descriptions, and every Markdown/documentation file (`.md`, specs, plans, handoffs, reviews, history, knowledge, suggestions, status fields).
 Never mix languages inside a single artifact. If the human writes in Russian, your chat reply is Russian but the files you produce are English.
 Existing codebase precedent overrides this only when the project clearly already uses non-English identifiers.
 

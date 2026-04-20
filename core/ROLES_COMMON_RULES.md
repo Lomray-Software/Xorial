@@ -45,20 +45,8 @@ Your exit marker (defined in your role's **Exit marker** section) is exactly wha
 }
 ```
 
-**Kanban sync:**
-After writing `status.json`, move the feature card in `{{project_context}}/kanban.md` to the matching column:
-
-| `status` value | Column |
-|---|---|
-| `QUEUED` | `## ⏳ Queued` |
-| `IN_PROGRESS` | `## 🔵 In Progress` |
-| `NEEDS_HUMAN_INPUT`, `BLOCKED` | `## 🔴 Needs Input` |
-| `IMPLEMENTATION_COMPLETE`, `IN_REVIEW` | `## 👀 Review` |
-| `DONE` | `## ✅ Done` |
-
-Card format: `- [ ] [[work/{type}/{name}/{name}|{name}]]`
-
-Remove the card from its current column, add it to the new one. If the card doesn't exist yet, add it.
+**Write boundary:**
+You write only inside your feature folder (`{{project_context}}/work/{type}/{name}/**`) and, where the role explicitly allows, `{{project_context}}/knowledge/**`. Never edit `kanban.md`, `project-map.canvas`, or anything under `.obsidian/` — these are human-owned views that a separate tool syncs from `status.json`.
 
 ---
 
@@ -124,7 +112,7 @@ If there is any conflict between role instructions and these rules:
 
 ## Language policy
 
-**All files you produce are English-only.** This includes: every `.md` file (spec, plan, handoff, review, history, knowledge, suggestions, kanban), `status.json` fields, code, comments, commit messages, and PR descriptions.
+**All files you produce are English-only.** This includes: every `.md` file (spec, plan, handoff, review, history, knowledge, suggestions), `status.json` fields, code, comments, commit messages, and PR descriptions.
 
 You may reply to the human in the human's language **in interactive chat only** (e.g. Intake interview, `NEEDS_HUMAN_INPUT` questions). The moment you write to disk, switch to English. Never mix languages inside a single artifact.
 

@@ -97,8 +97,6 @@ Turn raw input into a coherent implementation-ready spec.
 
   Only create child features when parallel implementation is genuinely beneficial. Single-scope or sequential features do not need children.
 
-  When creating any feature folder (child or otherwise), also update `{{project_context}}/.obsidian/plugins/obsidian-icon-folder/data.json`: add `"work/{type}/{name}/{name}.md": "LiArrowRightToLine"` and `"work/{type}/{name}/history/history.md": "LiArrowRightToLine"` if not already present.
-
 ## Pushback Rule
 
 Before incorporating any human-requested change, evaluate it against the current `spec-final.md`, `decisions.md`, and known architecture.
@@ -162,7 +160,6 @@ Check the **Pipeline configuration** section in your prompt (injected by conduct
   "status": "DONE"
 }
 ```
-6. Move the feature card in `{{project_context}}/kanban.md` to `## ✅ Done`.
 
 ## Linear research tickets (optional)
 

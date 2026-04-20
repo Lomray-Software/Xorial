@@ -163,8 +163,6 @@ Note: `"roles_skip": ["intake"]` is always set — intake already ran. For `fix/
 - Do not write plan.md, spec-final.md, or any other files. Only `feature.md`, `context.md`, `status.json`.
 - Keep `feature.md` and `context.md` concise — the Orchestrator will expand them.
 - After creating files, tell the human: folder is ready, conductor will pick it up automatically (if running), or they can start the Orchestrator manually.
-- After creating files, update `{{project_context}}/project-map.canvas`: add a file node for `work/{type}/{name}/{name}.md` inside `grp-{type}` group, with sub-nodes for `plan.md`, `handoff.md`, `history/history.md` below it, and edges connecting them. Use the existing k-id entry as a reference for positioning and format.
-- After creating files, update `{{project_context}}/.obsidian/plugins/obsidian-icon-folder/data.json`: add `"work/{type}/{name}/{name}.md": "LiArrowRightToLine"` and `"work/{type}/{name}/history/history.md": "LiArrowRightToLine"` if not already present.
 
 ---
 
