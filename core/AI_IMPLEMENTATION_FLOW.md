@@ -107,6 +107,17 @@ When reusing this workflow in a new project:
 -   Implement only delta changes.
 -   Preserve working code unless spec requires change.
 
+### Write Boundary
+
+Pipeline roles (orchestrator, critic, implementer, reviewer, behavior-reviewer, intake) write only inside:
+
+-   `{{project_context}}/work/{type}/{name}/**` — their own feature folder
+-   `{{project_context}}/knowledge/**` — when the role explicitly allows it
+
+They never edit `kanban.md`, `project-map.canvas`, or anything under `.obsidian/`. Those files are Obsidian views owned by the human; a dedicated utility role (`view-sync`) is the only writer.
+
+**Why this exists.** Those view files are edited by a human through Obsidian in parallel with the bot's pushes. With two writers, every pipeline pass that also touched the views would race against human edits and hit rebase conflicts on push. Limiting pipeline roles to their own feature folder + running view updates only on explicit `/xorial sync` removes the race.
+
 ------------------------------------------------------------------------
 
 ## Roles
@@ -161,6 +172,24 @@ Responsibilities:
 Owns:
 - `behavior-review.md`
 - `status.json`
+
+### Utility roles (non-pipeline)
+
+These roles live outside the intake→orchestrator→…→finalize loop. They are invoked explicitly by a human, do not consume or produce `status.json`, and never hand off to another role.
+
+**View Sync** (`{{xorial_core}}/roles/view-sync.md`, invoked via `/xorial sync`)
+
+Reconciles the three Obsidian view files against the current state of `work/**/status.json`:
+
+- `{{project_context}}/kanban.md`
+- `{{project_context}}/project-map.canvas`
+- `{{project_context}}/.obsidian/plugins/obsidian-icon-folder/data.json`
+
+Append-only: adds missing entries and prunes entries whose backing `work/{type}/{name}/` folder is gone. Never rewrites existing human layout (card order, canvas node coordinates). This is the only writer of those three files — see **Write Boundary** above.
+
+**PR Reviewer** (`{{xorial_core}}/roles/pr-reviewer.ignore.md`)
+
+Standalone reviewer for open GitHub pull requests. Location-agnostic — runs in core mode (no project) or project mode (full project context). Reads the diff, produces a planned review, posts as a single `REQUEST_CHANGES` or `COMMENT` review after invoker confirmation. Never `APPROVE`s (approval is a human decision).
 
 ------------------------------------------------------------------------
 
