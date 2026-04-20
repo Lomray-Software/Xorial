@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Xorial pre-commit: run the self-audit in strict mode. Block the commit
+# on findings. To bypass temporarily, use `git commit --no-verify` — but
+# prefer fixing the drift the audit pointed at.
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+exec ./scripts/audit --strict

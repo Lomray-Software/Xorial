@@ -1,0 +1,305 @@
+#!/usr/bin/env python3
+"""Self-audit for the Xorial core repo.
+
+Detects the drift surfaces that actually hurt here:
+  - Leftover backup / patch scratch files checked into the tree.
+  - Mismatch between role files on disk and the `ROLE_FILES` registry in
+    `providers/slack/invoker.py`.
+  - Mismatch between coded slash subcommands and the `help_text()`
+    listing a human sees.
+  - Markdown references to `core/roles/<name>.md` paths that don't
+    resolve.
+  - Docs older than 60 days while the code areas they describe have
+    moved since.
+
+Exits non-zero on findings. Pass `--strict` for the pre-commit variant
+(same checks, shorter output). Pass `--dry-run` to print what it would
+check without running file-system mutations (this audit is read-only, so
+`--dry-run` is effectively a no-op, but kept for interface symmetry).
+
+Intentionally zero third-party dependencies — runs anywhere Python 3.10+
+is installed.
+"""
+from __future__ import annotations
+
+import argparse
+import ast
+import re
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+
+REPO = Path(__file__).resolve().parent.parent
+
+# Leftover-scratch patterns. Anything under .git/, .venv/, node_modules/,
+# suggestions/, or tagged with the gitignored `*.ignore.*` suffix is out
+# of scope — those are deliberately unversioned or off-limits.
+LEFTOVER_SUFFIXES = (".bak", ".prepatch", ".orig", ".tmp", ".swp")
+LEFTOVER_EXCLUDE_DIRS = {".git", ".venv", "venv", "node_modules", ".idea", "suggestions"}
+
+# Role files live here. Anything with `.ignore.` in the name is a
+# gitignored utility role (see `.gitignore` → `*.ignore.*`) and is not
+# expected to appear in the invoker registry.
+ROLES_DIR = REPO / "core" / "roles"
+INVOKER_PY = REPO / "providers" / "slack" / "invoker.py"
+HANDLERS_PY = REPO / "providers" / "slack" / "handlers.py"
+
+# Markdown trees the audit scans for stale cross-references.
+DOC_ROOTS = [
+    REPO / "docs",
+    REPO / "core",
+    REPO / "AGENTS.md",
+    REPO / "README.md",
+    REPO / "SETUP.md",
+    REPO / "ONBOARD.md",
+]
+
+
+class Findings:
+    def __init__(self) -> None:
+        self.items: list[str] = []
+
+    def add(self, msg: str) -> None:
+        self.items.append(msg)
+
+    def __bool__(self) -> bool:
+        return bool(self.items)
+
+
+# ---------- Check: leftover scratch files ---------------------------------
+
+def check_leftovers(f: Findings) -> None:
+    for path in REPO.rglob("*"):
+        if not path.is_file():
+            continue
+        parts = set(path.relative_to(REPO).parts)
+        if parts & LEFTOVER_EXCLUDE_DIRS:
+            continue
+        if path.suffix in LEFTOVER_SUFFIXES:
+            f.add(f"leftover scratch file: {path.relative_to(REPO)}")
+
+
+# ---------- Check: ROLE_FILES ↔ core/roles/ -------------------------------
+
+def _parse_role_files_dict() -> dict[str, str]:
+    """Pull the ROLE_FILES literal out of invoker.py via AST — avoids
+    running the provider code (which requires slack-sdk at import)."""
+    tree = ast.parse(INVOKER_PY.read_text(encoding="utf-8"))
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == "ROLE_FILES":
+                    if isinstance(node.value, ast.Dict):
+                        out: dict[str, str] = {}
+                        for k, v in zip(node.value.keys, node.value.values):
+                            if isinstance(k, ast.Constant) and isinstance(v, ast.Constant):
+                                out[str(k.value)] = str(v.value)
+                        return out
+    raise RuntimeError("ROLE_FILES dict not found in invoker.py")
+
+
+def check_role_files(f: Findings) -> None:
+    try:
+        registry = _parse_role_files_dict()
+    except Exception as exc:
+        f.add(f"could not parse ROLE_FILES from {INVOKER_PY.relative_to(REPO)}: {exc}")
+        return
+
+    # Every registered role must exist on disk.
+    for alias, fname in registry.items():
+        role_path = ROLES_DIR / fname
+        if not role_path.exists():
+            f.add(f"ROLE_FILES['{alias}'] -> {fname} does not exist in core/roles/")
+
+    # Every role file on disk must either be registered OR be an
+    # exempt file: gitignored utility (`*.ignore.*`) or an infrastructure
+    # reference doc that lives here for cross-link convenience.
+    # Registered but unused files are fine (role might be callable via a
+    # different code path).
+    exempt_names = {
+        "00-conductor.md",  # infra reference for the Python conductor, not a dispatchable role
+    }
+    registered = set(registry.values())
+    for p in sorted(ROLES_DIR.glob("*.md")):
+        name = p.name
+        if ".ignore." in name or name in exempt_names:
+            continue
+        if name not in registered:
+            f.add(
+                f"orphan role file: core/roles/{name} is not registered in "
+                f"providers/slack/invoker.py ROLE_FILES (and not in the audit's exempt set)"
+            )
+
+
+# ---------- Check: coded slash commands ↔ help_text ------------------------
+
+# Match `if sub == "foo":` and `elif sub == "foo":` in handlers.py.
+_SUB_EQ = re.compile(r'\bsub\s*==\s*"([a-z0-9-]+)"')
+# Collect `/xorial <cmd>` mentions inside help_text().
+_HELP_CMD = re.compile(r"/xorial\s+([a-z0-9-]+)")
+
+
+def _extract_coded_subs() -> set[str]:
+    text = HANDLERS_PY.read_text(encoding="utf-8")
+    return set(_SUB_EQ.findall(text))
+
+
+def _extract_agent_commands() -> set[str]:
+    """AGENT_COMMANDS is a frozenset/set literal in handlers.py — those
+    aren't caught by the `sub == "foo"` regex. Parse the module and pull
+    the literal."""
+    tree = ast.parse(HANDLERS_PY.read_text(encoding="utf-8"))
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == "AGENT_COMMANDS":
+                    if isinstance(node.value, (ast.Set, ast.Tuple, ast.List)):
+                        return {e.value for e in node.value.elts if isinstance(e, ast.Constant)}
+    return set()
+
+
+def _extract_help_subs() -> set[str]:
+    tree = ast.parse(HANDLERS_PY.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and node.name == "help_text":
+            body_text = ast.unparse(node)
+            return set(_HELP_CMD.findall(body_text))
+    return set()
+
+
+def check_slash_commands(f: Findings) -> None:
+    coded = _extract_coded_subs() | _extract_agent_commands()
+    # `help` and subcommands whose behavior is "just print help" should be
+    # announced in help_text anyway; no special-case exclusion.
+    help_subs = _extract_help_subs()
+
+    missing_in_help = coded - help_subs - {"help"}
+    missing_in_code = help_subs - coded - _agent_aliases(coded)
+    for sub in sorted(missing_in_help):
+        f.add(f"slash command '/xorial {sub}' is coded in handlers.py but not listed in help_text()")
+    for sub in sorted(missing_in_code):
+        f.add(f"slash command '/xorial {sub}' is listed in help_text() but no code path handles it")
+
+
+def _agent_aliases(coded: set[str]) -> set[str]:
+    """help_text() uses `<feat|fix|refactor|chore>` and `<type>/<name>`
+    placeholders — strip those out of the comparison so they don't show
+    up as phantom subcommands."""
+    return {"feat", "fix", "refactor", "chore", "name", "type", "anything"}
+
+
+# ---------- Check: markdown refs to core/roles/<name>.md -------------------
+
+_ROLE_REF = re.compile(r"core/roles/([A-Za-z0-9_.-]+\.md)")
+
+
+def check_markdown_role_refs(f: Findings) -> None:
+    for root in DOC_ROOTS:
+        if not root.exists():
+            continue
+        paths = [root] if root.is_file() else list(root.rglob("*.md"))
+        for p in paths:
+            # Skip role files themselves and gitignored utilities.
+            if ".ignore." in p.name:
+                continue
+            text = p.read_text(encoding="utf-8", errors="replace")
+            for match in _ROLE_REF.finditer(text):
+                target = ROLES_DIR / match.group(1)
+                if not target.exists():
+                    f.add(
+                        f"{p.relative_to(REPO)} references core/roles/{match.group(1)} "
+                        f"which does not exist"
+                    )
+
+
+# ---------- Check: docs stale while nearby code moved ---------------------
+
+STALE_DAYS = 60
+# (doc_path, code_glob) pairs — drift hotspots. If code under the glob
+# moved within STALE_DAYS but the doc hasn't, flag it.
+STALE_PAIRS = [
+    ("core/AI_IMPLEMENTATION_FLOW.md", "providers/slack/*.py"),
+    ("core/AI_IMPLEMENTATION_FLOW.md", "core/roles/*.md"),
+    ("core/ROLES_COMMON_RULES.md", "core/roles/*.md"),
+    ("docs/BOOTSTRAP.md", "providers/slack/*.py"),
+    ("docs/BOOTSTRAP.md", "core/roles/*.md"),
+]
+
+
+def _git_last_mtime(pattern: str) -> float | None:
+    """Latest commit timestamp for any file matching `pattern`.
+    Falls back to filesystem mtime if git is unavailable."""
+    try:
+        paths = list(REPO.glob(pattern))
+        if not paths:
+            return None
+        ts = 0.0
+        for p in paths:
+            out = subprocess.check_output(
+                ["git", "-C", str(REPO), "log", "-1", "--format=%ct", "--", str(p.relative_to(REPO))],
+                text=True,
+                stderr=subprocess.DEVNULL,
+            ).strip()
+            if out:
+                ts = max(ts, float(out))
+            else:
+                ts = max(ts, p.stat().st_mtime)
+        return ts or None
+    except (subprocess.CalledProcessError, OSError):
+        return None
+
+
+def check_staleness(f: Findings) -> None:
+    now = time.time()
+    cutoff = STALE_DAYS * 24 * 3600
+    for doc_rel, code_glob in STALE_PAIRS:
+        doc = REPO / doc_rel
+        if not doc.exists():
+            continue
+        doc_ts = _git_last_mtime(doc_rel) or doc.stat().st_mtime
+        code_ts = _git_last_mtime(code_glob)
+        if code_ts is None:
+            continue
+        # Doc is stale if: doc is older than cutoff AND code is newer
+        # than doc by at least a week (avoid noise from same-day edits).
+        if (now - doc_ts) > cutoff and (code_ts - doc_ts) > (7 * 24 * 3600):
+            age_days = int((now - doc_ts) / 86400)
+            lag_days = int((code_ts - doc_ts) / 86400)
+            f.add(
+                f"{doc_rel} is {age_days}d old, but {code_glob} moved "
+                f"{lag_days}d more recently — review for drift"
+            )
+
+
+# ---------- Entry ---------------------------------------------------------
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--strict", action="store_true", help="compact output for pre-commit")
+    ap.add_argument("--dry-run", action="store_true", help="no-op flag for interface symmetry")
+    args = ap.parse_args()
+
+    f = Findings()
+    check_leftovers(f)
+    check_role_files(f)
+    check_slash_commands(f)
+    check_markdown_role_refs(f)
+    check_staleness(f)
+
+    if not f:
+        if not args.strict:
+            print("audit: OK (0 findings)")
+        return 0
+
+    prefix = "" if args.strict else "audit: "
+    header = f"{prefix}{len(f.items)} finding(s)"
+    print(header, file=sys.stderr)
+    for item in f.items:
+        print(f"  - {item}", file=sys.stderr)
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

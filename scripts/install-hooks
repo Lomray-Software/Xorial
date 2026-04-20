@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# One-off setup: point git at the committed hooks in .githooks/.
+# After this, every `git commit` in this clone runs `scripts/audit --strict`
+# via `.githooks/pre-commit`.
+#
+# Safe to re-run. Undoes itself via `git config --unset core.hooksPath`.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+git config core.hooksPath .githooks
+chmod +x .githooks/* scripts/audit scripts/install-hooks 2>/dev/null || true
+
+echo "hooks installed. pre-commit now runs scripts/audit --strict."
+echo "to undo: git config --unset core.hooksPath"

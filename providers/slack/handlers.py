@@ -148,7 +148,7 @@ def help_text() -> str:
         "• `/xorial status` — show feature status\n"
         "• `/xorial sync` — refresh kanban / canvas / obsidian icons from work folders\n"
         "• `/xorial intake` — run intake role in a thread\n"
-        "• `/xorial orchestrate` — run orchestrator\n"
+        "• `/xorial orchestrate` · `/xorial orchestrator` — run orchestrator\n"
         "• `/xorial critic` — run critic\n"
         "• `/xorial whoami` — show who you are recorded as\n"
         "• `/xorial register <name>` — register your speaker identity\n"
