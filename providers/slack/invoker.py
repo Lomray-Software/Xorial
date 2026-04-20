@@ -22,6 +22,7 @@ ROLE_FILES = {
     "implementer": "30-implementer.md",
     "reviewer": "40-reviewer.md",
     "behavior-reviewer": "50-behavior-reviewer.md",
+    "view-sync": "view-sync.md",
 }
 
 

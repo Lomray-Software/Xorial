@@ -48,7 +48,14 @@ async def commit_and_push(project: Project, role: str, feature: str, speaker: st
 
     cwd = project.project_root
     branch = project.git_branch
-    msg = f"xorial({role}): {feature} — by {speaker}"
+    # Project-level roles (e.g. view-sync) pass feature="" — drop the empty
+    # slot so the commit message reads `xorial(view-sync) — by X` instead of
+    # `xorial(view-sync):  — by X`.
+    msg = (
+        f"xorial({role}): {feature} — by {speaker}"
+        if feature
+        else f"xorial({role}) — by {speaker}"
+    )
 
     await _run("git", "-C", cwd, "add", ".xorial")
     rc, _, _ = await _run("git", "-C", cwd, "diff", "--cached", "--quiet")

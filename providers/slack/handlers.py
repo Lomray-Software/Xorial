@@ -95,6 +95,19 @@ def register(app: AsyncApp, cfg: Config, locks: FeatureLocks) -> None:
             await _cmd_status(respond, cfg, channel_id)
             return
 
+        if sub == "sync":
+            await _cmd_sync(
+                app=app,
+                cfg=cfg,
+                locks=locks,
+                client=client,
+                respond=respond,
+                channel_id=channel_id,
+                project=project,
+                speaker=speaker,
+            )
+            return
+
         if sub == "register":
             # /xorial register <name>   — user registers their own instance_name
             if not rest:
@@ -133,6 +146,7 @@ def help_text() -> str:
         "• `/xorial unbind` — remove channel binding\n"
         "• `/xorial delete <type>/<name> [confirm]` — hard-delete feature (folder + bindings + threads)\n"
         "• `/xorial status` — show feature status\n"
+        "• `/xorial sync` — refresh kanban / canvas / obsidian icons from work folders\n"
         "• `/xorial intake` — run intake role in a thread\n"
         "• `/xorial orchestrate` — run orchestrator\n"
         "• `/xorial critic` — run critic\n"
@@ -271,6 +285,46 @@ async def _cmd_run_role(
         feature=feature,
         speaker=speaker,
         user_message=message,
+        attachments=None,
+        resume_session=None,
+    )
+
+
+async def _cmd_sync(
+    *,
+    app: AsyncApp,
+    cfg: Config,
+    locks: FeatureLocks,
+    client: AsyncWebClient,
+    respond,
+    channel_id: str,
+    project: Project,
+    speaker: str,
+) -> None:
+    """Project-wide view refresh. No channel binding required — this is not
+    tied to any feature. Locks on an empty-feature namespace so two concurrent
+    `/xorial sync` calls for the same project dedupe automatically."""
+    if locks.is_busy(project.key, ""):
+        await respond(":hourglass: a view-sync is already running for this project.")
+        return
+
+    parent = await client.chat_postMessage(
+        channel=channel_id,
+        text=f":arrows_counterclockwise: *view-sync* on `{project.name}` — by {speaker}",
+    )
+    thread_ts = parent["ts"]
+
+    await run_pass(
+        cfg=cfg,
+        locks=locks,
+        client=client,
+        project=project,
+        channel_id=channel_id,
+        thread_ts=thread_ts,
+        role="view-sync",
+        feature="",
+        speaker=speaker,
+        user_message="",
         attachments=None,
         resume_session=None,
     )
