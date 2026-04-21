@@ -34,6 +34,23 @@ class RunEvent:
     cost_usd: float | None = None
 
 
+def _sdk_env(cfg: Config) -> dict[str, str]:
+    """Env passed to the Claude Agent SDK subprocess. The SDK needs PATH,
+    HOME, and everything else — so we inherit, then adjust based on
+    auth_mode:
+      - "api": inject ANTHROPIC_API_KEY (per-token billing).
+      - "subscription": strip ANTHROPIC_API_KEY so the bundled Claude Code
+        CLI falls back to OAuth creds in the runtime user's ~/.claude/
+        (subscription quota billing).
+    """
+    env = dict(os.environ)
+    if cfg.auth_mode == "subscription":
+        env.pop("ANTHROPIC_API_KEY", None)
+    elif cfg.anthropic_api_key:
+        env["ANTHROPIC_API_KEY"] = cfg.anthropic_api_key
+    return env
+
+
 def _build_prompt(
     project: Project,
     role: str,
@@ -125,17 +142,11 @@ async def run_role(
         continuation=bool(resume_session),
     )
 
-    # Merge onto os.environ, not replace it — the SDK subprocess needs PATH,
-    # HOME, and everything else the parent process has.
-    env = dict(os.environ)
-    if cfg.anthropic_api_key:
-        env["ANTHROPIC_API_KEY"] = cfg.anthropic_api_key
-
     options = ClaudeAgentOptions(
         model=model or cfg.default_model,
         cwd=project.project_root,
         permission_mode="bypassPermissions",
-        env=env,
+        env=_sdk_env(cfg),
         resume=resume_session,
     )
 
@@ -190,17 +201,13 @@ async def run_chat(
     """Free-form chat mode: the bot answers orientation / help / casual
     questions in a thread. Read-only tools, no git commit, Sonnet-class model.
     """
-    env = dict(os.environ)
-    if cfg.anthropic_api_key:
-        env["ANTHROPIC_API_KEY"] = cfg.anthropic_api_key
-
     options = ClaudeAgentOptions(
         model=cfg.chat_model,
         cwd=project.project_root,
         system_prompt=CHAT_SYSTEM_PROMPT,
         allowed_tools=["Read", "Glob", "Grep", "WebFetch"],
         permission_mode="bypassPermissions",
-        env=env,
+        env=_sdk_env(cfg),
         resume=resume_session,
     )
 

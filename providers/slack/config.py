@@ -46,6 +46,12 @@ class Config:
     signing_secret: str
     anthropic_api_key: str
     projects_dir: str
+    # "api" — inject ANTHROPIC_API_KEY into the SDK subprocess, billed per
+    # token via the Anthropic API. "subscription" — leave ANTHROPIC_API_KEY
+    # unset so the bundled Claude Code CLI uses the OAuth creds stored in
+    # the runtime user's ~/.claude/ (requires a prior `claude login` under
+    # that user), billed against the Pro/Max subscription quota.
+    auth_mode: str = "api"
     default_model: str = "claude-opus-4-7"
     chat_model: str = "claude-sonnet-4-6"
     log_level: str = "INFO"
@@ -66,9 +72,10 @@ REQUIRED_CONFIG_KEYS = (
     "bot_token",
     "app_token",
     "signing_secret",
-    "anthropic_api_key",
     "projects_dir",
 )
+
+VALID_AUTH_MODES = ("api", "subscription")
 
 
 def _require_file(path: Path, hint: str) -> dict:
@@ -95,6 +102,18 @@ def load() -> Config:
         raise ConfigError(
             "config.json is missing required fields: " + ", ".join(missing)
             + "\n  see SLACK_APP_SETUP.md for where to get Slack tokens."
+        )
+
+    auth_mode = cfg.get("auth_mode", "api")
+    if auth_mode not in VALID_AUTH_MODES:
+        raise ConfigError(
+            f"config.json auth_mode must be one of {VALID_AUTH_MODES}, got {auth_mode!r}."
+        )
+    if auth_mode == "api" and not cfg.get("anthropic_api_key"):
+        raise ConfigError(
+            "config.json auth_mode=api requires anthropic_api_key. "
+            "Either set the key or switch auth_mode to 'subscription' "
+            "(run `claude login` under the runtime user first)."
         )
 
     projects_data = _require_file(
@@ -143,8 +162,9 @@ def load() -> Config:
         bot_token=cfg["bot_token"],
         app_token=cfg["app_token"],
         signing_secret=cfg["signing_secret"],
-        anthropic_api_key=cfg["anthropic_api_key"],
+        anthropic_api_key=cfg.get("anthropic_api_key", ""),
         projects_dir=cfg["projects_dir"],
+        auth_mode=auth_mode,
         default_model=cfg.get("default_model", "claude-opus-4-7"),
         chat_model=cfg.get("chat_model", "claude-sonnet-4-6"),
         log_level=cfg.get("log_level", "INFO"),
