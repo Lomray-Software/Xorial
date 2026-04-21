@@ -44,7 +44,9 @@ class SlackStreamer:
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     _stopped: bool = False
 
-    async def start(self) -> None:
+    async def start(self, initial_status: str = "") -> None:
+        if initial_status:
+            self._status = initial_status
         resp = await self.client.chat_postMessage(
             channel=self.channel,
             thread_ts=self.thread_ts,

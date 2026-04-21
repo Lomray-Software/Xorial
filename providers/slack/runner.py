@@ -62,7 +62,7 @@ async def _pump(streamer: SlackStreamer, events) -> tuple[str, float | None]:
             continue
         if ev.kind == "text":
             cur_tool, cur_count = None, 0
-            await streamer.clear_status()
+            await streamer.set_status("✍️ writing…")
             await streamer.push(ev.text)
         elif ev.kind == "tool":
             name = ev.text
@@ -129,7 +129,7 @@ async def run_pass(
             thread_ts=thread_ts,
             prefix=f"*{role}*" if not resume_session else f"*{role}* (cont.)",
         )
-        await streamer.start()
+        await streamer.start(initial_status="⚙️ thinking…")
 
         tracker.start()
         try:
@@ -199,7 +199,7 @@ async def run_chat_pass(
         channel=channel_id,
         thread_ts=thread_ts,
     )
-    await streamer.start()
+    await streamer.start(initial_status="⚙️ thinking…")
 
     tracker.start()
     try:
