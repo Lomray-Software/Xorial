@@ -92,6 +92,37 @@ In the Slack channel you want to use, run:
 
 Then run `/xorial help` — if the bot replies, you're done.
 
+## 10. Pick how the bundled Claude Code CLI authenticates
+
+The Xorial bot runs roles via the Claude Agent SDK, which shells out to the bundled Claude Code CLI. You choose how that CLI authenticates via `auth_mode` in `config.json`:
+
+### `"auth_mode": "api"` (default)
+
+Billed per token against the Anthropic API. The bot injects `ANTHROPIC_API_KEY` (from `config.json`'s `anthropic_api_key`) into the SDK subprocess.
+
+Setup: fill in `anthropic_api_key` in `config.json`. Nothing else to do.
+
+### `"auth_mode": "subscription"`
+
+Billed against the Claude Pro/Max subscription quota of the user running the bot. The bot strips `ANTHROPIC_API_KEY` from the subprocess env so the CLI falls back to OAuth creds stored in `~/.claude/`.
+
+Setup — **do this before starting the bot**:
+
+```bash
+# As the same OS user that will run the bot (e.g. `janitor` on the deploy host):
+claude login
+# → interactive browser flow, drops creds into ~/.claude/
+```
+
+Then set `"auth_mode": "subscription"` in `config.json`. You can leave `anthropic_api_key` unset or empty.
+
+Swap between modes freely — it's just a config field; restart the bot to pick up the change.
+
+### Which to pick
+
+- Solo / dogfooding on your own Max subscription → `subscription` (no per-token burn).
+- Team deployment where the bot should not eat one person's subscription → `api` with a dedicated workspace key.
+
 ---
 
 ## Troubleshooting

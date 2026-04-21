@@ -48,7 +48,10 @@ cp users.example.json      users.json        # optional starter
 
 Fill in `config.json`:
 - `bot_token` / `app_token` / `signing_secret` — from your Slack app (see `SLACK_APP_SETUP.md`)
-- `anthropic_api_key` — billing key the Agent SDK will use
+- `auth_mode` — how the bundled Claude Code CLI authenticates:
+  - `"api"` (default) — inject `anthropic_api_key` into the SDK subprocess; billed per token via the Anthropic API.
+  - `"subscription"` — strip `ANTHROPIC_API_KEY` so the CLI falls back to OAuth creds in the runtime user's `~/.claude/`; billed against that user's Pro/Max subscription quota. Requires a prior `claude login` under the same user that runs the bot. See `SLACK_APP_SETUP.md` §10.
+- `anthropic_api_key` — required when `auth_mode="api"`; may be omitted when `auth_mode="subscription"`
 - `projects_dir` — absolute dir where project clones live (informational)
 - `default_model` — used for role passes (intake/orchestrator/critic); default `claude-opus-4-7`
 - `chat_model` — used for `@xorial <anything>` chat replies; default `claude-sonnet-4-6`
@@ -135,11 +138,12 @@ When a role command fires:
 
 1. A parent message is posted in the channel; all streamed output lives in that message's thread.
 2. A per-feature `asyncio.Lock` is taken. Second `/xorial intake` on a running feature is rejected.
-3. `claude-agent-sdk` runs with `cwd = project.project_root` and `permission_mode = "bypassPermissions"`. The agent has the same tool access as Claude Code locally (Read/Write/Edit/Bash/etc.).
-4. Text blocks stream into the thread message via `chat_update` (throttled, rolls over at ~3800 chars).
-5. On completion: `git add .xorial && git commit && git push origin <branch>` from `git_push.py`. Commit message includes role, feature, speaker.
+3. **Pre-run sync:** `git pull --rebase origin <branch>` runs in `project_root` so the agent reads the CURRENT repo state, not files that predate a teammate's merge. If the working tree is dirty, or rebase fails, the pass is skipped with a `:warning:` in the thread — better to stop than let the role write decisions on a stale base.
+4. `claude-agent-sdk` runs with `cwd = project.project_root` and `permission_mode = "bypassPermissions"`. The agent has the same tool access as Claude Code locally (Read/Write/Edit/Bash/etc.).
+5. Text blocks stream into the thread message via `chat_update` (throttled, rolls over at ~3800 chars).
+6. On completion: `git add .xorial && git commit && git push origin <branch>` from `git_push.py`. If the remote moved during the pass, one `git pull --rebase` + retry is attempted (never `--force`). Commit message includes role, feature, speaker.
 
-If the project has `"auto_push": false`, step 5 is skipped and the thread reports it.
+If the project has `"auto_push": false`, steps 3 and 6 are both skipped — the bot stays out of your git state entirely.
 
 ## Scope boundaries
 
@@ -150,5 +154,9 @@ If the project has `"auto_push": false`, step 5 is skipped and the thread report
 ## Troubleshooting
 
 - Bot says _"Workspace T... is not bound"_ → add the workspace to `workspaces.json`.
-- Agent pass fails with permission errors → check `permission_mode` in `invoker.py`; confirm `ANTHROPIC_API_KEY` reaches the subprocess via `env`.
+- Agent pass fails with permission errors →
+  - `auth_mode="api"`: confirm `anthropic_api_key` is set in `config.json` and reaches the subprocess (see `_sdk_env` in `invoker.py`).
+  - `auth_mode="subscription"`: confirm `claude login` was run as the runtime user and `~/.claude/` has valid OAuth creds. The SDK subprocess inherits that user's HOME.
+- Bot ignores a thread reply that was posted via another Slack app using a user token (`xoxp-*`) → fixed in `events.py`: we only filter events where `bot_id` matches *our own* bot (resolved via `auth.test()` at startup). Cross-app posts from other apps' bot ids are accepted. If `auth.test()` fails at startup, we fail-safe to filtering any `bot_id` to prevent streamer-echo loops — check startup logs.
+- Pre-role pull fails with "working tree has uncommitted changes" → the bot refuses to rebase onto a dirty `project_root`. Commit/stash locally on the host running the bot, then re-run.
 - Slack rate limits on `chat_update` → the streamer retries on the next tick. Spikes are expected during long passes and are harmless.
