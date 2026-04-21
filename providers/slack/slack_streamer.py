@@ -61,8 +61,17 @@ class SlackStreamer:
         async with self._lock:
             # Roll over if we'd overflow the current message.
             if len(self._buffer) + len(text) > MAX_CHARS:
+                # The live status footer (`✍️ writing…`, `⚙️ editing files…`)
+                # only belongs to whichever message is currently being
+                # written. When we roll over, the previous message freezes
+                # in place — any footer baked into it would get stuck
+                # forever because finalize() only updates _current_ts.
+                # So strip the footer off the outgoing flush and off the
+                # initial post of the new message, then restore it so the
+                # new message picks it up on the next flush.
+                prev_status = self._status
+                self._status = ""
                 await self._flush_locked(force=True)
-                # Start a fresh message for the remainder.
                 resp = await self.client.chat_postMessage(
                     channel=self.channel,
                     thread_ts=self.thread_ts,
@@ -71,6 +80,7 @@ class SlackStreamer:
                 self._current_ts = resp["ts"]
                 self._buffer = ""
                 self._last_edit = time.monotonic()
+                self._status = prev_status
             self._buffer += text
             self._dirty = True
 
