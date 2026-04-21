@@ -101,20 +101,15 @@ def register(
 
     @app.event("message")
     async def on_message(event, client: AsyncWebClient):
-        # One-shot diagnostic: log the shape of every inbound message once.
-        # Remove after we've confirmed xoxp-from-other-app posts flow through.
-        log.info(
-            "msg event: subtype=%s bot_id=%s user=%s app_id=%s cmid=%s ts=%s thread=%s",
-            event.get("subtype"), event.get("bot_id"), event.get("user"),
-            event.get("app_id"), event.get("client_msg_id"),
-            event.get("ts"), event.get("thread_ts"),
-        )
-        # Ignore: OUR OWN bot's posts (prevent self-loops), edits/deletes/
+        # Skip OUR OWN bot's posts (prevent self-loops), edits/deletes/
         # channel events, DMs without thread. We match bot_id against our own
-        # rather than any bot_id so that messages authored via another app's
-        # token (e.g. a user's xoxp posting through a different Slack app)
-        # still reach the agent as a real speaker turn.
-        if self_bot_id and event.get("bot_id") == self_bot_id:
+        # rather than any bot_id so messages authored via another app's token
+        # (e.g. a user's xoxp via a different Slack app) still reach the
+        # agent as a real speaker turn. Fail-safe: if we couldn't resolve
+        # our own bot_id at startup, fall back to "filter any bot_id" —
+        # loses the cross-app feature but prevents streamer-echo loops.
+        bot_id = event.get("bot_id")
+        if bot_id and (not self_bot_id or bot_id == self_bot_id):
             return
         if event.get("subtype") not in ACCEPTED_MSG_SUBTYPES:
             return
