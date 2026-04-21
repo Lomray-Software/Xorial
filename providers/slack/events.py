@@ -62,7 +62,13 @@ def _strip_mention(text: str) -> str:
     return re.sub(r"<@[UW][A-Z0-9]+>\s*", "", text or "").strip()
 
 
-def register(app: AsyncApp, cfg: Config, locks: FeatureLocks, bot_user_id: str = "") -> None:
+def register(
+    app: AsyncApp,
+    cfg: Config,
+    locks: FeatureLocks,
+    bot_user_id: str = "",
+    self_bot_id: str = "",
+) -> None:
     dedup = DedupCache(maxsize=2000)
 
     @app.event("member_joined_channel")
@@ -95,8 +101,20 @@ def register(app: AsyncApp, cfg: Config, locks: FeatureLocks, bot_user_id: str =
 
     @app.event("message")
     async def on_message(event, client: AsyncWebClient):
-        # Ignore: bot messages, edits/deletes/channel events, DMs without thread.
-        if event.get("bot_id"):
+        # One-shot diagnostic: log the shape of every inbound message once.
+        # Remove after we've confirmed xoxp-from-other-app posts flow through.
+        log.info(
+            "msg event: subtype=%s bot_id=%s user=%s app_id=%s cmid=%s ts=%s thread=%s",
+            event.get("subtype"), event.get("bot_id"), event.get("user"),
+            event.get("app_id"), event.get("client_msg_id"),
+            event.get("ts"), event.get("thread_ts"),
+        )
+        # Ignore: OUR OWN bot's posts (prevent self-loops), edits/deletes/
+        # channel events, DMs without thread. We match bot_id against our own
+        # rather than any bot_id so that messages authored via another app's
+        # token (e.g. a user's xoxp posting through a different Slack app)
+        # still reach the agent as a real speaker turn.
+        if self_bot_id and event.get("bot_id") == self_bot_id:
             return
         if event.get("subtype") not in ACCEPTED_MSG_SUBTYPES:
             return
