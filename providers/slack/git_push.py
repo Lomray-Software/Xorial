@@ -17,6 +17,49 @@ async def _push(cwd: str, branch: str) -> tuple[int, str]:
     return rc, err.strip()
 
 
+async def pull_rebase(project: Project) -> str | None:
+    """Fast-forward local to origin before a role runs, so the agent reads
+    and edits the CURRENT repo state — not stale files that predate a
+    teammate's merge.
+
+    Returns None on success. Returns an error string on failure (dirty
+    tree, rebase conflict, network error) — caller should surface it to
+    the thread and skip the pass rather than letting the agent write on a
+    stale base.
+
+    Respects `project.auto_push`: if the user opted out of auto-push, we
+    also stay out of their git state on the pull side.
+    """
+    if not project.auto_push:
+        return None
+
+    cwd = project.project_root
+    branch = project.git_branch
+
+    rc, _, _ = await _run("git", "-C", cwd, "diff", "--quiet")
+    rc_cached, _, _ = await _run("git", "-C", cwd, "diff", "--cached", "--quiet")
+    if rc != 0 or rc_cached != 0:
+        return (
+            "working tree has uncommitted changes — pre-pull skipped. "
+            "Commit or stash them before re-running."
+        )
+
+    rc, _, err = await _run(
+        "git", "-C", cwd, "pull", "--rebase", "origin", branch,
+    )
+    if rc == 0:
+        return None
+
+    # Rebase failed mid-way. Abort to leave a clean tree — local commits
+    # (if any) return to their original base, remote is untouched.
+    await _run("git", "-C", cwd, "rebase", "--abort")
+    return (
+        f"pre-pull `git pull --rebase origin {branch}` failed — remote moved "
+        f"and local couldn't rebase cleanly. Resolve manually, then re-run. "
+        f"({err.strip()[:160]})"
+    )
+
+
 async def commit_and_push(project: Project, role: str, feature: str, speaker: str) -> str:
     """git add .xorial + current scope, commit with attribution, push.
 

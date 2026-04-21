@@ -15,7 +15,7 @@ from slack_sdk.web.async_client import AsyncWebClient
 from . import thread_state
 from .activity import tracker
 from .config import Config, Project
-from .git_push import commit_and_push
+from .git_push import commit_and_push, pull_rebase
 from .invoker import run_chat, run_role
 from .locks import FeatureLocks
 from .slack_streamer import SlackStreamer
@@ -112,6 +112,17 @@ async def run_pass(
         if latest and latest.get("session_id") and not resume_session:
             resume_session = latest["session_id"]
 
+        # Sync local to origin before the agent reads anything. Skips the
+        # pass if remote moved and rebase can't auto-resolve — better to
+        # stop here than let the role write decisions onto a stale base.
+        pull_err = await pull_rebase(project)
+        if pull_err:
+            await client.chat_postMessage(
+                channel=channel_id, thread_ts=thread_ts,
+                text=f":warning: {pull_err}",
+            )
+            return
+
         streamer = SlackStreamer(
             client=client,
             channel=channel_id,
@@ -173,6 +184,15 @@ async def run_chat_pass(
     """
     if thread_state.get(channel_id, thread_ts) is None:
         thread_state.start(channel_id, thread_ts, project.key, "", "chat", speaker)
+
+    # Chat answers read the repo — same fresh-state requirement as roles.
+    pull_err = await pull_rebase(project)
+    if pull_err:
+        await client.chat_postMessage(
+            channel=channel_id, thread_ts=thread_ts,
+            text=f":warning: {pull_err}",
+        )
+        return
 
     streamer = SlackStreamer(
         client=client,
