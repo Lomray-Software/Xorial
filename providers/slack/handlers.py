@@ -267,11 +267,14 @@ async def _cmd_run_role(
         await respond(f":hourglass: `{feature}` already has an agent running. Wait for it to finish.")
         return
 
-    # Post a parent message so streamed output lives in a thread.
-    parent = await client.chat_postMessage(
-        channel=channel_id,
-        text=f":robot_face: *{role}* on `{feature}` — by {speaker}",
-    )
+    # Post a parent message so streamed output lives in a thread. Slash
+    # command text is ephemeral, so echo the speaker's message into the
+    # parent — otherwise the channel sees only a bare header.
+    header = f":robot_face: *{role}* on `{feature}` — by {speaker}"
+    if message:
+        preview = message if len(message) <= 500 else message[:497] + "…"
+        header += f"\n> {preview}"
+    parent = await client.chat_postMessage(channel=channel_id, text=header)
     thread_ts = parent["ts"]
 
     await run_pass(
