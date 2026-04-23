@@ -98,6 +98,7 @@ Once a role pass posts its parent message, the bot tracks the thread. Any subseq
 - Speaker attribution is re-resolved per reply: if Ian answers Mikhail's intake, the next history entry is authored by Ian.
 - Per-feature lock serialises concurrent replies. A second reply waits for the first pass to finish.
 - `threads.json` persists `channel:thread_ts → {project, feature, role, session_id}` so restarts preserve sessions.
+- The final footer of a successful pass prompts the user to reply in-thread for refinements/questions, and start a new thread only for a new turn or different feature/topic — matching the session-resume semantics above.
 
 ### @mentions
 

@@ -40,6 +40,16 @@ _TOOL_VERBS = {
     "Task": "delegating to subagent",
 }
 
+# Session state is per-thread — reply-in-thread resumes, new thread starts fresh.
+_ROLE_FOLLOW_UP_HINT = (
+    "_:speech_balloon: Reply in this thread to refine or ask about this pass — "
+    "start a new thread for a new turn or different feature._"
+)
+_CHAT_FOLLOW_UP_HINT = (
+    "_:speech_balloon: Reply in this thread to follow up — "
+    "start a new thread for a new topic._"
+)
+
 
 def _verb_for_tool(name: str) -> str:
     return _TOOL_VERBS.get(name, name.lower())
@@ -159,7 +169,7 @@ async def run_pass(
             push_result = await commit_and_push(project, role, feature, speaker)
             suffix.append(push_result)
 
-            await streamer.finalize(" · ".join(suffix))
+            await streamer.finalize(" · ".join(suffix) + "\n" + _ROLE_FOLLOW_UP_HINT)
         except Exception as e:
             log.exception("run_pass failed")
             await streamer.finalize(f":x: failed: {e}")
@@ -222,7 +232,7 @@ async def run_chat_pass(
             suffix.append(f"${cost:.4f}")
         if session_id:
             suffix.append(f"session `{session_id[:8]}`")
-        await streamer.finalize(" · ".join(suffix))
+        await streamer.finalize(" · ".join(suffix) + "\n" + _CHAT_FOLLOW_UP_HINT)
     except Exception as e:
         log.exception("run_chat_pass failed")
         await streamer.finalize(f":x: failed: {e}")
