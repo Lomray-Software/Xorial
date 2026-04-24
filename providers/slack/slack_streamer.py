@@ -1,8 +1,12 @@
 import asyncio
+import logging
 import time
 from dataclasses import dataclass, field
 
 from slack_sdk.web.async_client import AsyncWebClient
+
+
+log = logging.getLogger(__name__)
 
 
 # Slack's per-message text limit is 4000 chars; leave headroom for the prefix.
@@ -59,30 +63,50 @@ class SlackStreamer:
         if not text:
             return
         async with self._lock:
-            # Roll over if we'd overflow the current message.
-            if len(self._buffer) + len(text) > MAX_CHARS:
-                # The live status footer (`✍️ writing…`, `⚙️ editing files…`)
-                # only belongs to whichever message is currently being
-                # written. When we roll over, the previous message freezes
-                # in place — any footer baked into it would get stuck
-                # forever because finalize() only updates _current_ts.
-                # So strip the footer off the outgoing flush and off the
-                # initial post of the new message, then restore it so the
-                # new message picks it up on the next flush.
-                prev_status = self._status
-                self._status = ""
-                await self._flush_locked(force=True)
-                resp = await self.client.chat_postMessage(
-                    channel=self.channel,
-                    thread_ts=self.thread_ts,
-                    text=self._render(""),
-                )
-                self._current_ts = resp["ts"]
-                self._buffer = ""
-                self._last_edit = time.monotonic()
-                self._status = prev_status
-            self._buffer += text
+            await self._append_locked(text)
+
+    async def _append_locked(self, text: str) -> None:
+        """Append text to buffer, rolling over across messages as needed.
+
+        A single SDK text event can exceed MAX_CHARS on its own (observed:
+        orchestrator summary, 4344 chars). Without chunking, that chunk
+        either gets silently rejected by Slack on update or sits forever
+        in a too-large buffer. Chunk it across as many messages as needed.
+        """
+        while text:
+            remaining = MAX_CHARS - len(self._buffer)
+            if remaining <= 0:
+                await self._rollover_locked()
+                continue
+            if len(text) <= remaining:
+                self._buffer += text
+                self._dirty = True
+                return
+            self._buffer += text[:remaining]
             self._dirty = True
+            text = text[remaining:]
+            await self._rollover_locked()
+
+    async def _rollover_locked(self) -> None:
+        # The live status footer (`✍️ writing…`, `⚙️ editing files…`) only
+        # belongs to whichever message is currently being written. When we
+        # roll over, the previous message freezes in place — any footer
+        # baked into it would get stuck forever because finalize() only
+        # updates _current_ts. So strip the footer off the outgoing flush
+        # and off the initial post of the new message, then restore it so
+        # the new message picks it up on the next flush.
+        prev_status = self._status
+        self._status = ""
+        await self._flush_locked(force=True)
+        resp = await self.client.chat_postMessage(
+            channel=self.channel,
+            thread_ts=self.thread_ts,
+            text=self._render(""),
+        )
+        self._current_ts = resp["ts"]
+        self._buffer = ""
+        self._last_edit = time.monotonic()
+        self._status = prev_status
 
     async def set_status(self, status: str) -> None:
         """Replace the live status footer (one line, shown below the buffer)."""
@@ -102,10 +126,11 @@ class SlackStreamer:
     async def finalize(self, suffix: str = "") -> None:
         self._stopped = True
         async with self._lock:
-            self._status = ""
             if suffix:
-                self._buffer += ("\n" if self._buffer and not self._buffer.endswith("\n") else "") + suffix
-                self._dirty = True
+                tail = ("\n" if self._buffer and not self._buffer.endswith("\n") else "") + suffix
+                await self._append_locked(tail)
+            self._status = ""
+            self._dirty = True
             await self._flush_locked(force=True)
         if self._flusher:
             self._flusher.cancel()
@@ -138,8 +163,13 @@ class SlackStreamer:
             )
             self._last_edit = now
             self._dirty = False
-        except Exception:
+        except Exception as e:
             # Slack 429 / transient errors: drop this edit, next tick retries.
+            # Log so silent rejections (e.g. oversize payload) don't disappear.
+            log.warning(
+                "slack flush failed (ts=%s, body_len=%d): %s",
+                self._current_ts, len(self._buffer), e,
+            )
             self._last_edit = now
 
     def _render(self, body: str) -> str:
