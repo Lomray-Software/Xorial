@@ -21,7 +21,9 @@ Open any AI agent with tool access (Claude Code, Codex CLI, Cursor agent, etc.) 
 
 > **"Read `ONBOARD.md` and connect me to my project at `/absolute/path/to/my/project`."**
 
-The agent runs setup, asks only for values it cannot derive (API keys, Telegram credentials, Linear team), writes everything into place, and verifies with a dry-run. No scripts to remember, no manual config editing. Works for both first-time project setup and joining a project a teammate has already Xorial-ified.
+The agent runs `attach.sh`, fills `instance_name` in `.xorial/config.json`, drafts `project-context.md` from the codebase, and leaves you in **manual mode** — ready to run roles by hand from any AI agent (`Read .xorial/chat.md and follow it`, or a direct `Take role: …` prompt).
+
+> **Note:** ONBOARD.md sets up manual mode only. The automated conductor (`./.xorial/run.sh`) and Slack/Telegram providers are not wired up by onboarding — they need extra config (API keys, Telegram bot, etc.) and are documented separately in `SETUP.md` and `providers/slack/README.md`.
 
 If you prefer to do it by hand, see `SETUP.md`.
 

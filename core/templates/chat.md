@@ -63,18 +63,14 @@ Wait for them to confirm it ran successfully.
 
 ### O3. Fill in config.json
 
-Open `.xorial/config.json` together. Walk through each required field:
+Open `.xorial/config.json` together. For **manual mode**, only two fields are required — fill those and leave the rest at template defaults:
 
 | Field | What to put |
 |---|---|
-| `xorial_path` | Absolute path to Xorial folder (from O1) |
-| `instance_name` | A name for this machine, e.g. `"MacBook Pro"` |
-| `anthropic_api_key` | From console.anthropic.com |
-| `openai_api_key` | From platform.openai.com (voice transcription) |
-| `telegram_bot_token` | From @BotFather on Telegram |
-| `telegram_chat_id` | Their Telegram chat ID |
+| `xorial_path` | Absolute path to Xorial folder (from O1) — `attach.sh` should already have set this |
+| `instance_name` | A personal name or `name-machine`, e.g. `"Mikhail"`, `"Misha MBP"`, `"ian-linux"` |
 
-For each missing field, ask for the value and write it into the file. Skip fields the user explicitly says they don't need.
+The other fields (`anthropic_api_key`, `openai_api_key`, `telegram_bot_token`, `telegram_chat_id`, `linear`, …) drive the automated conductor and the Slack/Telegram providers. Tell the user: _"Leave those as-is — they're for the automated conductor / Slack bot, which we're not setting up here. See `SETUP.md` if you want to wire them up later."_
 
 ### O4. Fill in project-context.md
 
@@ -103,10 +99,11 @@ You don't need to wait for this step — Obsidian is optional for agents, only n
 
 Confirm setup is complete:
 
-> "✓ Xorial is set up. You can now:
+> "✓ Xorial is set up (manual mode). You can now:
 > - **Start a new feature**: say 'new feature' and I'll take the intake role
 > - **Work on an existing feature**: say which one and I'll take the orchestrator role
-> - **Run automated mode**: `./.xorial/run.sh` (conductor watches features automatically)"
+>
+> The automated conductor and Slack/Telegram bots are not wired up yet — see `SETUP.md` if you want them later."
 
 Then proceed normally — go to **Step 1** below.
 
