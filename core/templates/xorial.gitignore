@@ -5,10 +5,21 @@ agent.pid
 # Xorial — feature temp files
 context/work/**/tmp/
 
-# Obsidian — personal workspace state (per-user)
+# Obsidian — personal workspace state (per-user, never tracked)
+# Each viewer keeps their own theme, panel layout, bookmarks, plugin
+# shortcuts, etc. View-sync writes only icon-folder/data.json — every
+# other file in here is local taste, must not enter commits or every
+# UI tweak conflicts with someone else's pull.
 context/.obsidian/workspace.json
 context/.obsidian/workspace-mobile.json
 context/.obsidian/hotkeys.json
+context/.obsidian/appearance.json
+context/.obsidian/app.json
+context/.obsidian/graph.json
+context/.obsidian/bookmarks.json
+context/.obsidian/plugins/cmdr/data.json
+context/.obsidian/plugins/dataview/data.json
+context/.obsidian/plugins/omnisearch/data.json
 
 # Obsidian — downloaded plugin binaries (installed locally)
 context/.obsidian/plugins/*/main.js
