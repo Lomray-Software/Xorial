@@ -1,7 +1,10 @@
+import json
 import logging
 import os
 import shlex
 import shutil
+import tempfile
+from datetime import datetime, timezone
 
 from slack_bolt.async_app import AsyncApp
 from slack_sdk.web.async_client import AsyncWebClient
@@ -92,6 +95,20 @@ def register(app: AsyncApp, cfg: Config, locks: FeatureLocks, project_locks: Pro
             await _cmd_delete(respond, cfg, locks, project, speaker, channel_id, rest)
             return
 
+        if sub == "ship":
+            await _cmd_ship(
+                cfg=cfg,
+                locks=locks,
+                project_locks=project_locks,
+                client=client,
+                respond=respond,
+                channel_id=channel_id,
+                project=project,
+                speaker=speaker,
+                rest=rest,
+            )
+            return
+
         if sub == "status":
             await _cmd_status(respond, cfg, channel_id)
             return
@@ -148,6 +165,7 @@ def help_text() -> str:
         "• `/xorial bind <type>/<name>` — bind this channel to an existing feature\n"
         "• `/xorial unbind` — remove channel binding\n"
         "• `/xorial delete <type>/<name> [confirm]` — hard-delete feature (folder + bindings + threads)\n"
+        "• `/xorial ship [note]` — mark feature shipped, refresh views, archive this channel\n"
         "• `/xorial status` — show feature status\n"
         "• `/xorial sync` — refresh kanban / canvas / obsidian icons from work folders\n"
         "• `/xorial intake` — run intake role in a thread\n"
@@ -454,3 +472,162 @@ async def _cmd_delete(
         f":wastebasket: deleted `{feature}` · unbound {dropped_ch} channel(s) · "
         f"dropped {dropped_th} thread(s) · {push_result}"
     )
+
+
+def _mark_status_shipped(status_path: str, speaker: str, note: str) -> dict:
+    """Atomic-write status.json with shipped fields. Returns the prior dict
+    so caller can detect an already-shipped feature without re-reading."""
+    with open(status_path) as f:
+        prior = json.load(f)
+    if prior.get("status") == "SHIPPED":
+        return prior
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    new = dict(prior)
+    new["stage"] = "done"
+    new["status"] = "SHIPPED"
+    new["shipped_at"] = now
+    new["shipped_by"] = speaker
+    new["last_updated"] = now
+    if note:
+        new["shipped_note"] = note
+    d = os.path.dirname(status_path)
+    fd, tmp = tempfile.mkstemp(dir=d, prefix=".status.", suffix=".json.tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(new, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+        os.replace(tmp, status_path)
+    except Exception:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
+    return prior
+
+
+async def _cmd_ship(
+    *,
+    cfg: Config,
+    locks: FeatureLocks,
+    project_locks: ProjectLocks,
+    client: AsyncWebClient,
+    respond,
+    channel_id: str,
+    project: Project,
+    speaker: str,
+    rest: list[str],
+) -> None:
+    """Mark a feature shipped, post the finalka, refresh views, archive the
+    Slack channel. Binding is preserved — the archived channel becomes a
+    permanent record of "this room shipped this feature".
+
+    Order matters:
+      1. status.json write — fast, deterministic, recoverable.
+      2. status.json commit + push — must succeed before view-sync, or
+         we'd commit a kanban that disagrees with origin.
+      3. Channel-level finalka — public marker before things go quiet.
+      4. View-sync — rebuilds kanban/canvas/obsidian; commits separately.
+      5. Slack archive — must be last, because chat_postMessage to an
+         archived channel throws.
+    """
+    binding = feature_for_channel(cfg, channel_id)
+    if binding is None:
+        await respond(
+            ":warning: channel is not bound. `/xorial ship` runs from the "
+            "channel bound to the feature being shipped."
+        )
+        return
+    bound_project, feature = binding
+    if bound_project.key != project.key:
+        await respond(":warning: channel is bound to a different project than this workspace.")
+        return
+
+    if locks.is_busy(project.key, feature):
+        await respond(
+            f":hourglass: `{feature}` is currently being worked on — "
+            "wait for the active pass to finish before shipping."
+        )
+        return
+    if project_locks.active_count(project.key) > 0:
+        await respond(
+            ":hourglass: other passes are running on this project — "
+            "ship needs the working tree quiet. Try again once they finish."
+        )
+        return
+
+    status_path = os.path.join(project.feature_path(feature), "status.json")
+    if not os.path.exists(status_path):
+        await respond(
+            f":warning: `{feature}` has no `status.json` — has it ever been "
+            "through intake? Nothing to mark as shipped."
+        )
+        return
+
+    note = " ".join(rest).strip()
+
+    try:
+        prior = _mark_status_shipped(status_path, speaker, note)
+    except Exception as e:
+        await respond(f":x: failed to update status.json: {e}")
+        return
+    if prior.get("status") == "SHIPPED":
+        await respond(
+            f":information_source: `{feature}` was already shipped at "
+            f"`{prior.get('shipped_at', '?')}` by `{prior.get('shipped_by', '?')}`."
+        )
+        return
+
+    push_result = await commit_and_push(
+        project, "ship", feature, speaker,
+        [f".xorial/context/work/{feature}"],
+    )
+    if push_result.startswith(":x:") or push_result.startswith(":warning:"):
+        await respond(
+            f":x: ship aborted — could not commit status.json: {push_result}\n"
+            "Resolve the git issue, then re-run `/xorial ship`."
+        )
+        return
+
+    final_lines = [f":ship: *{feature} shipped by {speaker}*"]
+    if note:
+        final_lines.append(f"> {note}")
+    final_lines.append(
+        "Future fixes/changes → start a new `fix/<name>` in a fresh channel."
+    )
+    final_lines.append(f"This channel is now a read-only archive · {push_result}")
+    await client.chat_postMessage(channel=channel_id, text="\n".join(final_lines))
+
+    parent = await client.chat_postMessage(
+        channel=channel_id,
+        text=f":arrows_counterclockwise: *view-sync* — finalizing ship of `{feature}`",
+    )
+    sync_thread_ts = parent["ts"]
+    await run_pass(
+        cfg=cfg,
+        locks=locks,
+        project_locks=project_locks,
+        client=client,
+        project=project,
+        channel_id=channel_id,
+        thread_ts=sync_thread_ts,
+        role="view-sync",
+        feature="",
+        speaker=speaker,
+        user_message="",
+        attachments=None,
+        resume_session=None,
+    )
+
+    try:
+        await client.conversations_archive(channel=channel_id)
+    except Exception as e:
+        # Archive failed (most likely missing scope or bot is the channel
+        # owner without permission). Status + views are already committed,
+        # so the ship itself succeeded — only the Slack-side cleanup
+        # didn't. Surface the error so the human can archive manually.
+        await client.chat_postMessage(
+            channel=channel_id,
+            text=(
+                f":warning: ship complete, but Slack archive failed: `{e}`. "
+                "Archive the channel manually via channel settings → Archive channel."
+            ),
+        )

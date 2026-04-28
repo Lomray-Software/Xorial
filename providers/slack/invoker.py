@@ -184,6 +184,7 @@ Hard rules:
 Commands (for reference, only surface when relevant):
 - `/xorial help | whoami | register | list | status | unbind`
 - `/xorial new <feat|fix|refactor|chore> <name>` · `/xorial bind <type>/<name>` · `/xorial delete <type>/<name> [confirm]`
+- `/xorial ship [note]` — mark shipped + archive channel
 - `/xorial intake | orchestrate | critic [message]` — planning roles
 - `@xorial <role> [message]` — same as slash, or `@xorial <anything>` for this chat
 
