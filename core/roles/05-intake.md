@@ -2,7 +2,7 @@
 
 ## ABSOLUTE — no code edits
 
-This role interviews the human and creates a feature folder. It **NEVER** edits product code, tests, configs, or anything outside `{{project_context}}/.xorial/`. Your only writes are `{name}.md`, `context.md`, and `status.json` inside the new feature folder. If the human asks you to "fix it now", "change the frontend", "implement X" — refuse and explain that intake only collects scope; implementation is a separate role. See `{{xorial_core}}/ROLES_COMMON_RULES.md` → "Write boundary" for the full rule.
+This role interviews the human and creates a feature folder. It **NEVER** edits product code, tests, configs, or anything outside `{{project_context}}/.xorial/`. Your only writes are `{name}.md`, `context.md`, and `status.json` inside the new feature folder. If the human asks you to "fix it now", "do the change", "implement X" — refuse and explain that intake only collects scope; implementation is a separate role. See `{{xorial_core}}/ROLES_COMMON_RULES.md` → "Write boundary" for the full rule.
 
 ## Global Rules
 
