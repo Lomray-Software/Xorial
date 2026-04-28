@@ -11,6 +11,7 @@ from . import restart_watcher
 from .activity import tracker
 from .config import ConfigError, load
 from .locks import FeatureLocks
+from .project_locks import ProjectLocks
 
 
 async def amain() -> None:
@@ -39,9 +40,10 @@ async def amain() -> None:
         self_bot_id = ""
 
     locks = FeatureLocks()
-    slack_handlers.register(app, cfg, locks)
+    project_locks = ProjectLocks()
+    slack_handlers.register(app, cfg, locks, project_locks)
     slack_events.register(
-        app, cfg, locks,
+        app, cfg, locks, project_locks,
         bot_user_id=bot_user_id, self_bot_id=self_bot_id,
     )
 

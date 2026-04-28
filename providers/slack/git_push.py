@@ -1,4 +1,5 @@
 import asyncio
+
 from .config import Project
 
 
@@ -60,8 +61,22 @@ async def pull_rebase(project: Project) -> str | None:
     )
 
 
-async def commit_and_push(project: Project, role: str, feature: str, speaker: str) -> str:
-    """git add .xorial + current scope, commit with attribution, push.
+async def commit_and_push(
+    project: Project,
+    role: str,
+    feature: str,
+    speaker: str,
+    scope_paths: list[str],
+) -> str:
+    """git add <scope_paths> + current scope, commit with attribution, push.
+
+    `scope_paths` is the explicit allow-list of paths to stage,
+    relative to the project root. Caller MUST scope this to what the
+    role actually owns (typically `.xorial/context/work/<type>/<name>`
+    plus shared standards/knowledge dirs for role passes; the view
+    files for view-sync). Scoping is what makes concurrent passes safe:
+    if we did a blanket `git add .xorial` here, it would sweep up a
+    sibling pass's in-progress writes into this commit.
 
     SAFETY INVARIANTS (read before editing this function):
       - We NEVER use `--force`, `--force-with-lease`, or any other flag
@@ -100,7 +115,20 @@ async def commit_and_push(project: Project, role: str, feature: str, speaker: st
         else f"xorial({role}) — by {speaker}"
     )
 
-    await _run("git", "-C", cwd, "add", ".xorial")
+    # `git add -A -- <path>` handles three shapes of input cleanly:
+    #   - path exists on disk    → stages additions/modifications
+    #   - path was tracked, gone → stages the deletion (delete flow)
+    #   - path neither tracked nor on disk → "pathspec did not match",
+    #     which we silently skip (e.g. view-sync's first run before
+    #     `kanban.md` has been created, or a role pass that listed
+    #     `knowledge/` in scope but did not actually touch it).
+    for p in scope_paths:
+        rc, _, a_err = await _run("git", "-C", cwd, "add", "-A", "--", p)
+        if rc == 0:
+            continue
+        if "did not match" in a_err:
+            continue
+        return f":x: git add {p} failed: {a_err.strip()[:160]}"
     rc, _, _ = await _run("git", "-C", cwd, "diff", "--cached", "--quiet")
     if rc == 0:
         return "no changes to commit"

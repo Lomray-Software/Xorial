@@ -11,6 +11,7 @@ from .attribution import resolve_speaker
 from .config import Config, Project
 from .git_push import commit_and_push
 from .locks import FeatureLocks
+from .project_locks import ProjectLocks
 from .router import RoutingError, feature_for_channel, project_for_workspace
 from .runner import run_pass
 
@@ -36,7 +37,7 @@ def _parse(text: str) -> list[str]:
         return (text or "").split()
 
 
-def register(app: AsyncApp, cfg: Config, locks: FeatureLocks) -> None:
+def register(app: AsyncApp, cfg: Config, locks: FeatureLocks, project_locks: ProjectLocks) -> None:
 
     @app.command("/xorial")
     async def xorial_command(ack, body, client: AsyncWebClient, respond):
@@ -100,6 +101,7 @@ def register(app: AsyncApp, cfg: Config, locks: FeatureLocks) -> None:
                 app=app,
                 cfg=cfg,
                 locks=locks,
+                project_locks=project_locks,
                 client=client,
                 respond=respond,
                 channel_id=channel_id,
@@ -124,6 +126,7 @@ def register(app: AsyncApp, cfg: Config, locks: FeatureLocks) -> None:
                 app=app,
                 cfg=cfg,
                 locks=locks,
+                project_locks=project_locks,
                 client=client,
                 respond=respond,
                 body=body,
@@ -245,6 +248,7 @@ async def _cmd_run_role(
     app: AsyncApp,
     cfg: Config,
     locks: FeatureLocks,
+    project_locks: ProjectLocks,
     client: AsyncWebClient,
     respond,
     body: dict,
@@ -280,6 +284,7 @@ async def _cmd_run_role(
     await run_pass(
         cfg=cfg,
         locks=locks,
+        project_locks=project_locks,
         client=client,
         project=project,
         channel_id=channel_id,
@@ -298,6 +303,7 @@ async def _cmd_sync(
     app: AsyncApp,
     cfg: Config,
     locks: FeatureLocks,
+    project_locks: ProjectLocks,
     client: AsyncWebClient,
     respond,
     channel_id: str,
@@ -306,9 +312,20 @@ async def _cmd_sync(
 ) -> None:
     """Project-wide view refresh. No channel binding required — this is not
     tied to any feature. Locks on an empty-feature namespace so two concurrent
-    `/xorial sync` calls for the same project dedupe automatically."""
+    `/xorial sync` calls for the same project dedupe automatically.
+
+    Also refuses to start while any feature pass is active on the project:
+    view-sync reads every feature's status.json and rebuilds project-wide
+    views, so running it during in-flight feature passes would commit a
+    half-written snapshot."""
     if locks.is_busy(project.key, ""):
         await respond(":hourglass: a view-sync is already running for this project.")
+        return
+    if project_locks.active_count(project.key) > 0:
+        await respond(
+            ":hourglass: feature passes are running on this project — "
+            "view-sync needs the working tree quiet. Try again once they finish."
+        )
         return
 
     parent = await client.chat_postMessage(
@@ -320,6 +337,7 @@ async def _cmd_sync(
     await run_pass(
         cfg=cfg,
         locks=locks,
+        project_locks=project_locks,
         client=client,
         project=project,
         channel_id=channel_id,
@@ -427,7 +445,10 @@ async def _cmd_delete(
         cfg.channels.pop(cid, None)
     dropped_th = thread_state.drop_for_feature(project.key, feature)
 
-    push_result = await commit_and_push(project, "delete", feature, speaker)
+    push_result = await commit_and_push(
+        project, "delete", feature, speaker,
+        [f".xorial/context/work/{feature}"],
+    )
 
     await respond(
         f":wastebasket: deleted `{feature}` · unbound {dropped_ch} channel(s) · "

@@ -27,6 +27,7 @@ from .dedup import DedupCache
 from .files import download_attachments
 from .handlers import help_text
 from .locks import FeatureLocks
+from .project_locks import ProjectLocks
 from .router import RoutingError, feature_for_channel, project_for_workspace
 from .runner import run_chat_pass, run_pass
 
@@ -66,6 +67,7 @@ def register(
     app: AsyncApp,
     cfg: Config,
     locks: FeatureLocks,
+    project_locks: ProjectLocks,
     bot_user_id: str = "",
     self_bot_id: str = "",
 ) -> None:
@@ -157,6 +159,7 @@ def register(
             # Chat threads aren't bound to a feature and aren't locked.
             await run_chat_pass(
                 cfg=cfg,
+                project_locks=project_locks,
                 client=client,
                 project=project,
                 channel_id=channel_id,
@@ -182,6 +185,7 @@ def register(
         await run_pass(
             cfg=cfg,
             locks=locks,
+            project_locks=project_locks,
             client=client,
             project=project,
             channel_id=channel_id,
@@ -279,7 +283,7 @@ def register(
                 cfg.bot_token, project, thread_ts, event.get("files") or [],
             )
             await run_pass(
-                cfg=cfg, locks=locks, client=client,
+                cfg=cfg, locks=locks, project_locks=project_locks, client=client,
                 project=project, channel_id=channel_id, thread_ts=thread_ts,
                 role=role, feature=feature, speaker=speaker,
                 user_message=message, attachments=attachments or None,
@@ -295,7 +299,7 @@ def register(
             cfg.bot_token, project, thread_ts, event.get("files") or [],
         )
         await run_chat_pass(
-            cfg=cfg, client=client, project=project,
+            cfg=cfg, project_locks=project_locks, client=client, project=project,
             channel_id=channel_id, thread_ts=thread_ts,
             speaker=speaker, user_message=text,
             attachments=attachments or None,
