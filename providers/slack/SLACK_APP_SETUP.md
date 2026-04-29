@@ -32,8 +32,8 @@ Features → **OAuth & Permissions** → **Scopes** → **Bot Token Scopes**. Ad
 | `commands`          | register the `/xorial` slash command            |
 | `files:read`        | download attachments users drop into a thread   |
 | `users:read`        | look up display names when a user isn't registered |
-| `channels:manage`   | archive public channels on `/xorial ship`           |
-| `groups:write`      | archive private channels on `/xorial ship`          |
+| `channels:manage`   | archive bound public channels on `/xorial ship`     |
+| `groups:write`      | archive bound private channels on `/xorial ship`    |
 
 No user scopes needed.
 

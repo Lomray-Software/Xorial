@@ -165,7 +165,7 @@ def help_text() -> str:
         "• `/xorial bind <type>/<name>` — bind this channel to an existing feature\n"
         "• `/xorial unbind` — remove channel binding\n"
         "• `/xorial delete <type>/<name> [confirm]` — hard-delete feature (folder + bindings + threads)\n"
-        "• `/xorial ship [note]` — mark feature shipped, refresh views, archive this channel\n"
+        "• `/xorial ship [<type>/<name>] [note]` — mark shipped + refresh views (archives the channel only when bound)\n"
         "• `/xorial status` — show feature status\n"
         "• `/xorial sync` — refresh kanban / canvas / obsidian icons from work folders\n"
         "• `/xorial intake` — run intake role in a thread\n"
@@ -504,6 +504,22 @@ def _mark_status_shipped(status_path: str, speaker: str, note: str) -> dict:
     return prior
 
 
+_SHIP_TYPES = {"feat", "fix", "refactor", "chore"}
+
+
+def _parse_ship_args(rest: list[str]) -> tuple[str | None, str]:
+    """Split ship args into (explicit_feature_or_None, note).
+
+    First token is treated as a feature path when it has the shape
+    `<type>/<name>` with a known type. Anything else is the note.
+    """
+    if rest and "/" in rest[0]:
+        kind, _, name = rest[0].partition("/")
+        if kind in _SHIP_TYPES and name:
+            return rest[0], " ".join(rest[1:]).strip()
+    return None, " ".join(rest).strip()
+
+
 async def _cmd_ship(
     *,
     cfg: Config,
@@ -516,9 +532,15 @@ async def _cmd_ship(
     speaker: str,
     rest: list[str],
 ) -> None:
-    """Mark a feature shipped, post the finalka, refresh views, archive the
-    Slack channel. Binding is preserved — the archived channel becomes a
-    permanent record of "this room shipped this feature".
+    """Mark a feature shipped, post the finalka, refresh views; archive
+    the Slack channel only when shipping the channel's bound feature.
+
+    Two invocation modes:
+      • Bound channel, no arg → ship the bound feature, archive the
+        channel afterwards (the channel becomes a permanent record).
+      • Explicit `<type>/<name>` arg → ship that feature from any
+        channel, no archive. Useful for features with no dedicated
+        channel.
 
     Order matters:
       1. status.json write — fast, deterministic, recoverable.
@@ -526,20 +548,48 @@ async def _cmd_ship(
          we'd commit a kanban that disagrees with origin.
       3. Channel-level finalka — public marker before things go quiet.
       4. View-sync — rebuilds kanban/canvas/obsidian; commits separately.
-      5. Slack archive — must be last, because chat_postMessage to an
-         archived channel throws.
+      5. Slack archive (bound mode only) — must be last, because
+         chat_postMessage to an archived channel throws.
     """
+    explicit_feature, note = _parse_ship_args(rest)
     binding = feature_for_channel(cfg, channel_id)
-    if binding is None:
-        await respond(
-            ":warning: channel is not bound. `/xorial ship` runs from the "
-            "channel bound to the feature being shipped."
-        )
-        return
-    bound_project, feature = binding
-    if bound_project.key != project.key:
-        await respond(":warning: channel is bound to a different project than this workspace.")
-        return
+
+    if explicit_feature is not None:
+        feature = explicit_feature
+        archive_channel = False
+        if binding is not None:
+            bound_project, bound_feature = binding
+            if bound_project.key != project.key:
+                await respond(
+                    ":warning: this channel is bound to a different project — "
+                    "run the explicit ship from a neutral channel."
+                )
+                return
+            if bound_feature == feature:
+                # User explicitly named the same feature this channel is
+                # bound to — treat it as the normal bound ship (archive).
+                archive_channel = True
+            else:
+                await respond(
+                    f":warning: this channel is bound to `{bound_feature}`, "
+                    f"refusing to ship `{feature}` from here. Either drop the "
+                    f"argument to ship `{bound_feature}`, or `/xorial unbind` "
+                    f"first and re-run."
+                )
+                return
+    else:
+        if binding is None:
+            await respond(
+                ":warning: channel is not bound. Either run `/xorial bind "
+                "<type>/<name>` here first, or pass the feature explicitly: "
+                "`/xorial ship <type>/<name> [note]`."
+            )
+            return
+        bound_project, feature = binding
+        if bound_project.key != project.key:
+            await respond(":warning: channel is bound to a different project than this workspace.")
+            return
+        archive_channel = True
 
     if locks.is_busy(project.key, feature):
         await respond(
@@ -561,8 +611,6 @@ async def _cmd_ship(
             "through intake? Nothing to mark as shipped."
         )
         return
-
-    note = " ".join(rest).strip()
 
     try:
         prior = _mark_status_shipped(status_path, speaker, note)
@@ -593,7 +641,10 @@ async def _cmd_ship(
     final_lines.append(
         "Future fixes/changes → start a new `fix/<name>` in a fresh channel."
     )
-    final_lines.append(f"This channel is now a read-only archive · {push_result}")
+    if archive_channel:
+        final_lines.append(f"This channel is now a read-only archive · {push_result}")
+    else:
+        final_lines.append(f"Status committed · {push_result}")
     await client.chat_postMessage(channel=channel_id, text="\n".join(final_lines))
 
     parent = await client.chat_postMessage(
@@ -617,17 +668,18 @@ async def _cmd_ship(
         resume_session=None,
     )
 
-    try:
-        await client.conversations_archive(channel=channel_id)
-    except Exception as e:
-        # Archive failed (most likely missing scope or bot is the channel
-        # owner without permission). Status + views are already committed,
-        # so the ship itself succeeded — only the Slack-side cleanup
-        # didn't. Surface the error so the human can archive manually.
-        await client.chat_postMessage(
-            channel=channel_id,
-            text=(
-                f":warning: ship complete, but Slack archive failed: `{e}`. "
-                "Archive the channel manually via channel settings → Archive channel."
-            ),
-        )
+    if archive_channel:
+        try:
+            await client.conversations_archive(channel=channel_id)
+        except Exception as e:
+            # Archive failed (most likely missing scope or bot is the channel
+            # owner without permission). Status + views are already committed,
+            # so the ship itself succeeded — only the Slack-side cleanup
+            # didn't. Surface the error so the human can archive manually.
+            await client.chat_postMessage(
+                channel=channel_id,
+                text=(
+                    f":warning: ship complete, but Slack archive failed: `{e}`. "
+                    "Archive the channel manually via channel settings → Archive channel."
+                ),
+            )
