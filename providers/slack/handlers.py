@@ -12,7 +12,7 @@ from slack_sdk.web.async_client import AsyncWebClient
 from . import storage, thread_state
 from .attribution import resolve_speaker
 from .config import Config, Project
-from .git_push import commit_and_push
+from .git_push import commit_and_push, pull_rebase
 from .locks import FeatureLocks
 from .project_locks import ProjectLocks
 from .router import RoutingError, feature_for_channel, project_for_workspace
@@ -602,6 +602,15 @@ async def _cmd_ship(
             ":hourglass: other passes are running on this project — "
             "ship needs the working tree quiet. Try again once they finish."
         )
+        return
+
+    # Working tree may be stale — slash commands skip the runner-level
+    # pull_rebase that role passes do. Without this, shipping a feature
+    # that landed via someone else's PR would 404 on its status.json
+    # because the bot repo never fetched.
+    pull_err = await pull_rebase(project)
+    if pull_err:
+        await respond(f":warning: {pull_err}")
         return
 
     status_path = os.path.join(project.feature_path(feature), "status.json")
